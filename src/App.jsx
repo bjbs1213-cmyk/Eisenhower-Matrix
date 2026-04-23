@@ -8,7 +8,7 @@ import RoutinesView from './components/RoutinesView.jsx';
 import { storage } from './lib/storage.js';
 import {
   clearPasscode, getStoredPasscode,
-  getStoredTheme, setStoredTheme,
+  getThemeForWorkspace, setThemeForWorkspace,
   getStoredWorkspace, setStoredWorkspace,
 } from './lib/supabase.js';
 import { THEMES, WORKSPACES } from './lib/themes.js';
@@ -40,7 +40,8 @@ function MainApp({ onLogout }) {
   const [currentDate, setCurrentDate] = useState(todayKey());
   const [view, setView] = useState('matrix');
   const [workspace, setWorkspace] = useState(getStoredWorkspace());
-  const [themeId, setThemeId] = useState(getStoredTheme());
+  // 현재 워크스페이스의 마지막 테마를 초기값으로
+  const [themeId, setThemeId] = useState(() => getThemeForWorkspace(getStoredWorkspace()));
   const [data, setData] = useState({ work: {}, self: {} });
   const [weeklyReflections, setWeeklyReflections] = useState({ work: {}, self: {} });
   const [routines, setRoutines] = useState([]);
@@ -53,12 +54,26 @@ function MainApp({ onLogout }) {
   const [width, setWidth] = useState(window.innerWidth);
   const eveningTimer = useRef(null);
   const weeklyTimer = useRef(null);
+  // 초기 로드 시 워크스페이스 변경 useEffect 트리거 방지용
+  const isFirstRender = useRef(true);
 
-  const theme = THEMES[themeId] || THEMES.mono;
+  const theme = THEMES[themeId] || THEMES.winter;
 
-  // Persist prefs
-  useEffect(() => { setStoredTheme(themeId); }, [themeId]);
-  useEffect(() => { setStoredWorkspace(workspace); }, [workspace]);
+  // 테마 변경 시 → 현재 워크스페이스의 테마로 저장
+  useEffect(() => {
+    setThemeForWorkspace(workspace, themeId);
+  }, [themeId, workspace]);
+
+  // 워크스페이스 전환 시 → 해당 워크스페이스의 마지막 테마로 자동 복원
+  useEffect(() => {
+    setStoredWorkspace(workspace);
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    const savedTheme = getThemeForWorkspace(workspace);
+    setThemeId(savedTheme);
+  }, [workspace]);
 
   // Responsive
   useEffect(() => {
@@ -261,31 +276,33 @@ function MainApp({ onLogout }) {
   // ---- Routine mutations ----
   const saveRoutine = async (routine) => {
     setRoutines((prev) => {
-      const idx = prev.findIndex((r) => r.id === routine.id);
+      const arr = Array.isArray(prev) ? prev : [];
+      const idx = arr.findIndex((r) => r.id === routine.id);
       if (idx >= 0) {
-        const next = [...prev];
+        const next = [...arr];
         next[idx] = routine;
         return next;
       }
-      return [...prev, routine];
+      return [...arr, routine];
     });
     await storage.saveRoutine(routine);
   };
 
   const deleteRoutine = async (id) => {
-    setRoutines((prev) => prev.filter((r) => r.id !== id));
-    setCompletions((prev) => prev.filter((c) => c.routine_id !== id));
+    setRoutines((prev) => (Array.isArray(prev) ? prev : []).filter((r) => r.id !== id));
+    setCompletions((prev) => (Array.isArray(prev) ? prev : []).filter((c) => c.routine_id !== id));
     await storage.deleteRoutine(id);
   };
 
   const toggleCompletion = async (routineId, dateKey, done) => {
     setCompletions((prev) => {
+      const arr = Array.isArray(prev) ? prev : [];
       if (done) {
-        const exists = prev.some((c) => c.routine_id === routineId && c.date_key === dateKey);
-        if (exists) return prev;
-        return [...prev, { routine_id: routineId, date_key: dateKey }];
+        const exists = arr.some((c) => c.routine_id === routineId && c.date_key === dateKey);
+        if (exists) return arr;
+        return [...arr, { routine_id: routineId, date_key: dateKey }];
       }
-      return prev.filter((c) => !(c.routine_id === routineId && c.date_key === dateKey));
+      return arr.filter((c) => !(c.routine_id === routineId && c.date_key === dateKey));
     });
     await storage.toggleRoutineCompletion(routineId, dateKey, done);
   };
@@ -397,11 +414,14 @@ function ThemeStyles({ theme }) {
         width: 28px; height: 28px; border-radius: 6px;
         cursor: pointer; border: 2px solid transparent;
         transition: all 0.15s; padding: 0;
+        position: relative;
       }
       .theme-chip.active { border-color: var(--text); }
-      .theme-chip.mono { background: linear-gradient(135deg, #FFF 50%, #1A1A1A 50%); }
-      .theme-chip.beige { background: linear-gradient(135deg, #FAF8F5 50%, #8B6F47 50%); }
-      .theme-chip.blue { background: linear-gradient(135deg, #FAFBFC 50%, #5B7FA3 50%); }
+      /* 4 seasons */
+      .theme-chip.spring { background: linear-gradient(135deg, #FDF2F5 50%, #D4627A 50%); }
+      .theme-chip.summer { background: linear-gradient(135deg, #E9F5F1 50%, #2D8B7A 50%); }
+      .theme-chip.autumn { background: linear-gradient(135deg, #F6EADC 50%, #B4501C 50%); }
+      .theme-chip.winter { background: linear-gradient(135deg, #E8EFF5 50%, #2C4A6E 50%); }
 
       .sync-badge {
         display: inline-flex; align-items: center; gap: 4px;
@@ -653,6 +673,60 @@ function ThemeStyles({ theme }) {
         font-family: 'Lora', Georgia, serif !important;
         font-style: italic !important; font-weight: 600;
         font-size: 17px; color: var(--text);
+      }
+
+      /* ─── Weekly Overview ─ 주간 달력 strip (모바일 반응형) ─── */
+      .weekly-strip {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 20px;
+        width: 100%;
+      }
+      .weekly-day {
+        border-radius: 10px;
+        padding: 18px 12px;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 110px;
+        transition: all 0.15s;
+        min-width: 0;
+        overflow: hidden;
+      }
+      .weekly-day .wd-label {
+        font-family: 'Inter', sans-serif;
+        font-size: 13px;
+        letter-spacing: 0.04em;
+        font-weight: 500;
+      }
+      .weekly-day .wd-date {
+        font-family: 'Lora', Georgia, serif !important;
+        font-style: italic !important;
+        font-weight: 600;
+        font-size: 30px;
+        line-height: 1;
+      }
+      .weekly-day .wd-count {
+        font-family: 'Inter', sans-serif;
+        font-size: 11px;
+      }
+      /* 모바일: 간격 줄이고 패딩 줄이고 폰트 축소 */
+      @media (max-width: 540px) {
+        .weekly-strip {
+          gap: 4px;
+        }
+        .weekly-day {
+          padding: 10px 2px;
+          min-height: 82px;
+          gap: 4px;
+        }
+        .weekly-day .wd-label { font-size: 10px; }
+        .weekly-day .wd-date { font-size: 18px; }
+        .weekly-day .wd-count { font-size: 9px; }
       }
     `}</style>
   );
@@ -1149,8 +1223,8 @@ function InsightsPanel(p) {
 
 // Mini routines widget for Insights panel
 function RoutinesMiniWidget(p) {
-  const active = (p.routines || [])
-    .filter((r) => r.workspace === p.workspace && !r.archived)
+  const active = (Array.isArray(p.routines) ? p.routines : [])
+    .filter((r) => r && r.workspace === p.workspace && !r.archived)
     .filter((r) => {
       const day = new Date(p.currentDate).getDay();
       if (r.frequency === 'daily') return true;
@@ -1161,7 +1235,7 @@ function RoutinesMiniWidget(p) {
     });
 
   const doneIds = new Set(
-    (p.completions || [])
+    (Array.isArray(p.completions) ? p.completions : [])
       .filter((c) => c.date_key === p.currentDate)
       .map((c) => c.routine_id)
   );
@@ -1347,13 +1421,8 @@ function WeeklyView(p) {
       <h2 className="section-title">Weekly Overview</h2>
       <div className="section-sub">주간 집계 · {WORKSPACES[p.workspace].label}</div>
 
-      {/* Large weekly calendar strip - PROPER PROPORTIONS */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(7, 1fr)',
-        gap: 10,
-        marginBottom: 20,
-      }}>
+      {/* Large weekly calendar strip - responsive (모바일에서 7칸 축소) */}
+      <div className="weekly-strip">
         {p.weekKeys.map((k) => {
           const dt = keyToDate(k);
           const idx = (dt.getDay() + 6) % 7;
@@ -1367,37 +1436,20 @@ function WeeklyView(p) {
             <button
               key={k}
               onClick={() => p.setCurrentDate(k)}
+              className="weekly-day"
               style={{
                 background: active ? 'var(--text)' : (weekend ? 'var(--panel3)' : 'var(--panel)'),
                 border: `${today ? 1.5 : 1}px solid ${active || today ? 'var(--text)' : 'var(--border)'}`,
-                borderRadius: 10,
-                padding: '18px 12px',
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                minHeight: 110,
-                transition: 'all 0.15s',
               }}
             >
-              <div style={{
-                fontFamily: 'Inter, sans-serif',
-                fontSize: 13,
+              <div className="wd-label" style={{
                 color: active ? 'var(--bg)' : 'var(--text-dim)',
-                letterSpacing: '0.04em',
-                fontWeight: 500,
               }}>{names[idx]}</div>
-              <div className="serif-i" style={{
-                fontSize: 30,
+              <div className="wd-date" style={{
                 color: active ? 'var(--bg)' : 'var(--text)',
-                lineHeight: 1,
               }}>{+k.split('-')[2]}</div>
               {count > 0 && (
-                <div style={{
-                  fontFamily: 'Inter, sans-serif',
-                  fontSize: 11,
+                <div className="wd-count" style={{
                   color: active ? 'var(--bg)' : 'var(--text-dim)',
                   opacity: active ? 0.85 : 1,
                 }}>
