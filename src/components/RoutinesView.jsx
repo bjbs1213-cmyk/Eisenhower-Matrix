@@ -25,16 +25,20 @@ export default function RoutinesView(p) {
   const [editingRoutine, setEditingRoutine] = useState(null);
 
   // 현재 워크스페이스의 루틴만 필터
-  const myRoutines = useMemo(
-    () => (routines || [])
-      .filter((r) => r.workspace === workspace && !r.archived)
-      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
-    [routines, workspace]
-  );
-
+const myRoutines = useMemo(
+  () => {
+    const arr = Array.isArray(routines) ? routines : [];
+    return arr
+      .filter((r) => r && r.workspace === workspace && !r.archived)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  },
+  [routines, workspace]
+);
   // 루틴별 완료 맵 구축
-  const completionMap = useMemo(() => buildCompletionMap(completions), [completions]);
-
+const completionMap = useMemo(
+  () => buildCompletionMap(Array.isArray(completions) ? completions : []),
+  [completions]
+);
   // 오늘 활성인 루틴
   const todayActive = useMemo(
     () => myRoutines.filter((r) => isRoutineActiveOn(r, currentDate)),
