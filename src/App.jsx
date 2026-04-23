@@ -82,19 +82,21 @@ function MainApp({ onLogout }) {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  // online status
+// online status
   useEffect(() => {
-    const on = () => storage.remote() ? setSyncStatus('synced') : setSyncStatus('offline');
-    const off = () => setSyncStatus('offline');
-    window.addEventListener('online', on);
-    window.addEventListener('offline', off);
-    if (!navigator.onLine) setSyncStatus('offline');
+    const updateStatus = () => {
+      if (!navigator.onLine) setSyncStatus('offline');
+      else if (storage.remote()) setSyncStatus('synced');
+      else setSyncStatus('offline');
+    };
+    updateStatus(); // 초기 즉시 체크
+    window.addEventListener('online', updateStatus);
+    window.addEventListener('offline', updateStatus);
     return () => {
-      window.removeEventListener('online', on);
-      window.removeEventListener('offline', off);
+      window.removeEventListener('online', updateStatus);
+      window.removeEventListener('offline', updateStatus);
     };
   }, []);
-
   const reload = async () => {
     setSyncStatus('syncing');
     try {
