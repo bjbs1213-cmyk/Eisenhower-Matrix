@@ -1,0 +1,29 @@
+@font-face {
+  font-family: 'NoonnuGothic';
+  src: url('/fonts/NoonnuBasicGothicRegular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  margin: 0;
+  padding: 0;
+}
+html, body, #root { height: 100%; }
+body {
+  font-family: 'NoonnuGothic', 'Lora', Georgia, sans-serif;
+  background: #FAFAFA;
+  color: #1A1A1A;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+input, textarea, button { font-family: inherit; }
+
+/* Scrollbar styling for sidebar */
+.sidebar-scroll::-webkit-scrollbar { width: 4px; }
+.sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+.sidebar-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 2px; }
+.sidebar-scroll::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.2); }
