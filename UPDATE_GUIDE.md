@@ -109,3 +109,4 @@ Vercel이 GitHub 커밋을 감지해서 자동으로 재빌드합니다. 기존 
 - `routine_completions` — 완료 기록 (passcode, routine_id, date_key) — 복합 기본키(複合 Primary Key)
 - 두 테이블 모두 RLS 활성 + 모든 정책 `true` (기존 passcode 기반 모델과 동일)
 - Realtime publication에 자동 등록
+ 
