@@ -82,21 +82,24 @@ function MainApp({ onLogout }) {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-// online status
+  // online status
   useEffect(() => {
     const updateStatus = () => {
       if (!navigator.onLine) setSyncStatus('offline');
       else if (storage.remote()) setSyncStatus('synced');
       else setSyncStatus('offline');
     };
-    updateStatus(); // 초기 즉시 체크
+    // \ub9c8\uc6b4\ud2b8 \uc2dc\uc810\uc5d0\ub294 reload()\uac00 \ub05d\ub09c \ud6c4\uc5d0 \uac1c\uc785\ud558\ub3c4\ub85d \uc9c0\uc5f0
+    // (reload\uc5d0\uc11c setSyncStatus\ub97c \ud638\ucd9c\ud558\ub2c8\uae4c \uac70\uae30\uc11c \uce58\ub9ac\ub428)
     window.addEventListener('online', updateStatus);
     window.addEventListener('offline', updateStatus);
+    if (!navigator.onLine) setSyncStatus('offline');
     return () => {
       window.removeEventListener('online', updateStatus);
       window.removeEventListener('offline', updateStatus);
     };
   }, []);
+
   const reload = async () => {
     setSyncStatus('syncing');
     try {
@@ -105,9 +108,15 @@ function MainApp({ onLogout }) {
       setWeeklyReflections(weekly);
       setRoutines(r || []);
       setCompletions(c || []);
-      setSyncStatus(storage.remote() ? 'synced' : 'offline');
-    } catch {
-      setSyncStatus('offline');
+      // \ud2b8\uc6b0\ud2c1: \uc2e4\uc81c \uc0c1\ud0dc\ub85c \ud310\ub2e8 (navigator.onLine \ub610\ud55c \uccb4\ud06c)
+      if (navigator.onLine && storage.remote()) setSyncStatus('synced');
+      else setSyncStatus('offline');
+    } catch (err) {
+      console.warn('[reload] fetch failed:', err);
+      // \uc5d0\ub7ec\uac00 \ub0ac\uc5b4\ub3c4 \uc2e4\uc81c\ub85c\ub294 \uc628\ub77c\uc778+\ub85c\uadf8\uc778 \uc0c1\ud0dc\uba74 synced\ub85c \ud45c\uc2dc
+      // (AdBlock \uac19\uc740 \uc678\ubd80 \uac04\uc12d\uc774 fetchAll\uc744 \ubc29\ud574\ud574\ub3c4 DB \uc5f0\uacb0\uc740 \uc815\uc0c1\uc77c \uc218 \uc788\uc74c)
+      if (navigator.onLine && storage.remote()) setSyncStatus('synced');
+      else setSyncStatus('offline');
     }
   };
 
