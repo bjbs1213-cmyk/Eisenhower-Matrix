@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Plus, Check, Calendar, BarChart3, Moon, ChevronLeft, ChevronRight,
+  Plus, Check, Calendar, CalendarDays, BarChart3, Moon, ChevronLeft, ChevronRight,
   X, ArrowRight, LogOut, Cloud, CloudOff, Briefcase, Sprout, Repeat,
 } from 'lucide-react';
 import Login from './components/Login.jsx';
 import RoutinesView from './components/RoutinesView.jsx';
+import DatePickerPopup from './components/DatePickerPopup.jsx';
 import { storage } from './lib/storage.js';
 import {
   clearPasscode, getStoredPasscode,
@@ -89,8 +90,6 @@ function MainApp({ onLogout }) {
       else if (storage.remote()) setSyncStatus('synced');
       else setSyncStatus('offline');
     };
-    // \ub9c8\uc6b4\ud2b8 \uc2dc\uc810\uc5d0\ub294 reload()\uac00 \ub05d\ub09c \ud6c4\uc5d0 \uac1c\uc785\ud558\ub3c4\ub85d \uc9c0\uc5f0
-    // (reload\uc5d0\uc11c setSyncStatus\ub97c \ud638\ucd9c\ud558\ub2c8\uae4c \uac70\uae30\uc11c \uce58\ub9ac\ub428)
     window.addEventListener('online', updateStatus);
     window.addEventListener('offline', updateStatus);
     if (!navigator.onLine) setSyncStatus('offline');
@@ -108,13 +107,10 @@ function MainApp({ onLogout }) {
       setWeeklyReflections(weekly);
       setRoutines(r || []);
       setCompletions(c || []);
-      // \ud2b8\uc6b0\ud2c1: \uc2e4\uc81c \uc0c1\ud0dc\ub85c \ud310\ub2e8 (navigator.onLine \ub610\ud55c \uccb4\ud06c)
       if (navigator.onLine && storage.remote()) setSyncStatus('synced');
       else setSyncStatus('offline');
     } catch (err) {
       console.warn('[reload] fetch failed:', err);
-      // \uc5d0\ub7ec\uac00 \ub0ac\uc5b4\ub3c4 \uc2e4\uc81c\ub85c\ub294 \uc628\ub77c\uc778+\ub85c\uadf8\uc778 \uc0c1\ud0dc\uba74 synced\ub85c \ud45c\uc2dc
-      // (AdBlock \uac19\uc740 \uc678\ubd80 \uac04\uc12d\uc774 fetchAll\uc744 \ubc29\ud574\ud574\ub3c4 DB \uc5f0\uacb0\uc740 \uc815\uc0c1\uc77c \uc218 \uc788\uc74c)
       if (navigator.onLine && storage.remote()) setSyncStatus('synced');
       else setSyncStatus('offline');
     }
@@ -916,10 +912,11 @@ function AddTaskModal({ activeQuadrant, setActiveQuadrant, newTaskText, setNewTa
   );
 }
 
-// Top bar: date navigation + track badge
-function DateNav({ currentDate, shiftDate, setCurrentDate, trackLabel, dayStats }) {
+// Top bar: date navigation + track badge + calendar popup
+function DateNav({ currentDate, shiftDate, setCurrentDate, trackLabel, dayStats, wsData }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, position: 'relative' }}>
       <button className="arrow-btn" onClick={() => shiftDate(-1)}><ChevronLeft size={20} /></button>
       <div>
         <div className="serif-i" style={{ fontSize: 24, color: 'var(--text)' }}>
@@ -934,6 +931,66 @@ function DateNav({ currentDate, shiftDate, setCurrentDate, trackLabel, dayStats 
       <button className="arrow-btn" onClick={() => setCurrentDate(todayKey())} title="오늘">
         <Calendar size={16} />
       </button>
+      <button
+        className="arrow-btn"
+        onClick={() => setPickerOpen((v) => !v)}
+        title="달력에서 날짜 선택"
+        style={pickerOpen ? { background: 'var(--panel2)', borderColor: 'var(--text)' } : {}}
+      >
+        <CalendarDays size={16} />
+      </button>
+      {pickerOpen && (
+        <DatePickerPopup
+          currentDate={currentDate}
+          setCurrentDate={setCurrentDate}
+          wsData={wsData}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Mobile date bar with calendar popup
+function MobileDateBar(p) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '14px 18px', borderBottom: '1px solid var(--border-soft)',
+      position: 'relative',
+    }}>
+      <button className="icon-btn" onClick={() => p.shiftDate(-1)}>
+        <ChevronLeft size={20} />
+      </button>
+      <div
+        style={{ textAlign: 'center', flex: 1, cursor: 'pointer' }}
+        onClick={() => setPickerOpen((v) => !v)}
+      >
+        <div className="serif-i" style={{
+          fontSize: 18, color: 'var(--text)',
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+        }}>
+          <span className="kor" style={{ fontWeight: 700 }}>{formatDate(p.currentDate)}</span>
+          <CalendarDays size={14} style={{ color: 'var(--text-dim)' }} />
+          <span className="track-badge" style={{ marginLeft: 2, fontSize: 10 }}>{p.trackLabel}</span>
+        </div>
+        <div style={{ fontFamily: 'NoonnuGothic, sans-serif', fontSize: 12, color: 'var(--text-dim)', marginTop: 3 }}>
+          {p.dayStats.done} / {p.dayStats.total} 완료 · {p.dayStats.pct}%
+        </div>
+      </div>
+      <button className="icon-btn" onClick={() => p.shiftDate(1)}>
+        <ChevronRight size={20} />
+      </button>
+      {pickerOpen && (
+        <DatePickerPopup
+          currentDate={p.currentDate}
+          setCurrentDate={p.setCurrentDate}
+          wsData={p.wsData}
+          onClose={() => setPickerOpen(false)}
+          mobile
+        />
+      )}
     </div>
   );
 }
@@ -1142,6 +1199,7 @@ function MainArea(p) {
           setCurrentDate={p.setCurrentDate}
           trackLabel={p.trackLabel}
           dayStats={p.dayStats}
+          wsData={p.wsData}
         />
         <ThemeToggle themeId={p.themeId} setThemeId={p.setThemeId} />
       </div>
@@ -1333,27 +1391,8 @@ function CompactLayout(p) {
           <ThemeToggle themeId={p.themeId} setThemeId={p.setThemeId} />
         </div>
 
-        {/* Date bar */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '14px 18px', borderBottom: '1px solid var(--border-soft)',
-        }}>
-          <button className="icon-btn" onClick={() => p.shiftDate(-1)}>
-            <ChevronLeft size={20} />
-          </button>
-          <div style={{ textAlign: 'center', flex: 1 }}>
-            <div className="serif-i" style={{ fontSize: 18, color: 'var(--text)' }}>
-              <span className="kor" style={{ fontWeight: 700 }}>{formatDate(p.currentDate)}</span>
-              <span className="track-badge" style={{ marginLeft: 6, fontSize: 10 }}>{p.trackLabel}</span>
-            </div>
-            <div style={{ fontFamily: 'NoonnuGothic, sans-serif', fontSize: 12, color: 'var(--text-dim)', marginTop: 3 }}>
-              {p.dayStats.done} / {p.dayStats.total} 완료 · {p.dayStats.pct}%
-            </div>
-          </div>
-          <button className="icon-btn" onClick={() => p.shiftDate(1)}>
-            <ChevronRight size={20} />
-          </button>
-        </div>
+        {/* Date bar with calendar popup */}
+        <MobileDateBar {...p} />
 
         {p.carriedNotice && p.view === 'matrix' && (
           <div className="notice" style={{ margin: '12px 18px 0' }}>
