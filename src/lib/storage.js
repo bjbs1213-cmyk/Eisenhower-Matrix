@@ -3,6 +3,7 @@ import { supabase, isSupabaseConfigured, getStoredPasscode } from './supabase.js
 // ─────────────────────────────────────────────────────────────
 //  Storage layer - workspace aware (work / self) + routines + settings
 //  v4: sort_order(정렬), settings(이월·레이아웃 설정) 추가
+//  v5: task 상세 항목(詳細 項目) - notes, due_date, tags, checklist, url
 // ─────────────────────────────────────────────────────────────
 
 const LS_DATA = 'eisen:data';
@@ -24,7 +25,7 @@ export const DEFAULT_SETTINGS = {
   layout: {
     colRatio: 50,    // 좌측 사분면(Q1, Q3) 비율
     rowRatio: 50,    // 상단 사분면(Q1, Q2) 비율
-    sidebarWidth: 220, // 사이드바 너비 (px)
+    sidebarWidth: 300, // 사이드바 너비 (px)
   },
 };
 
@@ -93,6 +94,13 @@ async function remoteFetchAll() {
       carriedFrom: row.carried_from,
       carriedFromDate: row.carried_from_date,
       sort_order: row.sort_order ?? 0,
+      // 상세 항목 (詳細 項目) - v5
+      notes: row.notes || '',
+      due_date: row.due_date || null,
+      tags: Array.isArray(row.tags) ? row.tags : [],
+      checklist: Array.isArray(row.checklist) ? row.checklist : [],
+      url: row.url || '',
+      updated_at: row.updated_at ? new Date(row.updated_at).getTime() : null,
     });
   });
 
@@ -145,6 +153,12 @@ async function remoteUpsertTask(workspace, dateKey, task) {
     carried_from: task.carriedFrom || null,
     carried_from_date: task.carriedFromDate || null,
     sort_order: task.sort_order ?? 0,
+    // 상세 항목 (詳細 項目) - v5
+    notes: task.notes || null,
+    due_date: task.due_date || null,
+    tags: task.tags || [],
+    checklist: task.checklist || [],
+    url: task.url || null,
   });
 }
 
@@ -244,6 +258,8 @@ function subscribeRemote(onChange) {
   const passcode = getStoredPasscode();
   if (!passcode || !supabase) return () => {};
 
+  // user_settings는 자기 변경에도 트리거되어 무한 루프 + 디폴트 복귀 위험
+  // 그래서 user_settings 구독 제외 - 다른 기기에서 변경한 settings는 새로고침해야 반영됨
   const channel = supabase
     .channel(`eisen-${passcode}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `passcode=eq.${passcode}` }, onChange)
@@ -251,7 +267,6 @@ function subscribeRemote(onChange) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'weekly_reflections', filter: `passcode=eq.${passcode}` }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'routines', filter: `passcode=eq.${passcode}` }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'routine_completions', filter: `passcode=eq.${passcode}` }, onChange)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'user_settings', filter: `passcode=eq.${passcode}` }, onChange)
     .subscribe();
 
   return () => { supabase.removeChannel(channel); };
