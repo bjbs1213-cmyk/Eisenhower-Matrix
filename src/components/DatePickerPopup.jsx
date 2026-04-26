@@ -41,7 +41,7 @@ export default function DatePickerPopup({ currentDate, setCurrentDate, wsData, o
   const grid = useMemo(() => {
     const { year, month } = viewMonth;
     const first = new Date(year, month, 1);
-    const firstDayIdx = (first.getDay() + 6) % 7; // 월요일 시작
+    const firstDayIdx = first.getDay(); // 일요일 시작 (0=일, 1=월, ..., 6=토)
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
     const cells = [];
@@ -84,7 +84,7 @@ export default function DatePickerPopup({ currentDate, setCurrentDate, wsData, o
   };
 
   const today = todayKey();
-  const weekdayNames = ['월', '화', '수', '목', '금', '토', '일'];
+  const weekdayNames = ['일', '월', '화', '수', '목', '금', '토'];
   const monthLabel = `${viewMonth.year}년 ${viewMonth.month + 1}월`;
 
   return (
@@ -125,11 +125,12 @@ export default function DatePickerPopup({ currentDate, setCurrentDate, wsData, o
           margin-bottom: 12px;
         }
         .dp-month-label {
-          font-family: 'Lora', Georgia, serif;
-          font-style: italic;
-          font-weight: 600;
+          font-family: 'Inter', 'Pretendard', sans-serif;
+          font-style: normal;
+          font-weight: 700;
           font-size: 16px;
           color: var(--text);
+          letter-spacing: -0.015em;
         }
         .dp-nav {
           display: flex;
@@ -185,10 +186,11 @@ export default function DatePickerPopup({ currentDate, setCurrentDate, wsData, o
           justify-content: center;
           gap: 2px;
           padding: 0;
-          font-family: 'Lora', Georgia, serif;
-          font-weight: 500;
+          font-family: 'Inter', 'Pretendard', sans-serif;
+          font-weight: 600;
           font-size: 13px;
           color: var(--text);
+          letter-spacing: -0.015em;
           transition: all 0.1s;
           position: relative;
         }
@@ -282,7 +284,7 @@ export default function DatePickerPopup({ currentDate, setCurrentDate, wsData, o
 
         <div className="dp-weekdays">
           {weekdayNames.map((w, i) => (
-            <div key={w} className={`dp-wd ${i === 6 ? 'sun' : ''}`}>{w}</div>
+            <div key={w} className={`dp-wd ${i === 0 ? 'sun' : ''}`}>{w}</div>
           ))}
         </div>
 
