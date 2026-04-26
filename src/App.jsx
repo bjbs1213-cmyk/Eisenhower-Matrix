@@ -112,7 +112,7 @@ function MainApp({ onLogout }) {
     };
   }, []);
 
-  const reload = async () => {
+  const reload = async ({ includeSettings = false } = {}) => {
     setSyncStatus('syncing');
     try {
       const { data: d, weekly, routines: r, completions: c, settings: s } = await storage.fetchAll();
@@ -120,7 +120,8 @@ function MainApp({ onLogout }) {
       setWeeklyReflections(weekly);
       setRoutines(r || []);
       setCompletions(c || []);
-      if (s) setSettings(s);
+      // 초기 로드 또는 명시적 요청 시에만 settings 덮어쓰기 (자기 변경 보호)
+      if (includeSettings && s) setSettings(s);
       if (navigator.onLine && storage.remote()) setSyncStatus('synced');
       else setSyncStatus('offline');
     } catch (err) {
@@ -130,7 +131,8 @@ function MainApp({ onLogout }) {
     }
   };
 
-  useEffect(() => { reload().then(() => setLoaded(true)); }, []);
+  // 초기 로드 시에만 settings 포함
+  useEffect(() => { reload({ includeSettings: true }).then(() => setLoaded(true)); }, []);
 
   useEffect(() => {
     if (!loaded) return;
@@ -138,30 +140,74 @@ function MainApp({ onLogout }) {
     return unsub;
   }, [loaded]);
 
-  // Q2 auto carry (per workspace)
+  // 자동 이월 (自動 移越) - 워크스페이스별로 어제까지 미완료 업무를 오늘로 이어줌
+  // 핵심: 평일/주말 구분 없이 끊김 없이 (월·화·수·목·금·토·일 連續)
+  // 며칠 동안 앱을 안 열어도, 다시 열면 누락된 미완료 업무 모두 오늘로 모아줌
   useEffect(() => {
     if (!loaded) return;
     const wsData = data[workspace] || {};
     const todayTasks = wsData[currentDate]?.tasks || [];
-    const already = new Set(
-      todayTasks.filter((t) => t.carriedFrom != null).map((t) => t.carriedFrom)
-    );
-    const sourceKeys = Object.keys(wsData).filter((k) => k < currentDate && getCarryTarget(k) === currentDate);
-    if (sourceKeys.length === 0) return;
+
+    // 오늘 이미 이월된 업무들의 조상(祖上) ID 추적
+    // task.carriedFrom 체인을 따라 끝까지 올라감
+    const collectAncestors = () => {
+      const ancestors = new Set();
+      // 모든 ws 데이터에서 id → task 맵
+      const idMap = new Map();
+      Object.keys(wsData).forEach((dk) => {
+        (wsData[dk]?.tasks || []).forEach((t) => idMap.set(t.id, t));
+      });
+      // 오늘에 있는 carry된 업무들 각각의 조상 따라가기
+      todayTasks.forEach((t) => {
+        if (!t.carriedFrom) return;
+        let cur = t.carriedFrom;
+        const guard = new Set();
+        while (cur && !guard.has(cur)) {
+          ancestors.add(cur);
+          guard.add(cur);
+          const parent = idMap.get(cur);
+          cur = parent?.carriedFrom || null;
+        }
+      });
+      return ancestors;
+    };
+    const alreadyAncestors = collectAncestors();
+
+    // currentDate 이전의 모든 날 키 정렬 (昇順)
+    const pastKeys = Object.keys(wsData)
+      .filter((k) => k < currentDate)
+      .sort();
+    if (pastKeys.length === 0) return;
+
+    // 각 (carriedFromDate + text) 조합으로 마지막 인스턴스만 골라 오늘로 가져옴
+    // 즉 한 원천 업무가 여러 날 거쳐도 오늘에는 한 번만 등장
+    // 가장 최근 날(最近 日)의 미완료 인스턴스를 우선
+    const candidatesByRoot = new Map(); // key: rootDate|text → {task, sk}
+    pastKeys.forEach((sk) => {
+      (wsData[sk]?.tasks || []).forEach((t) => {
+        if (t.done) return;
+        if (!settings.carryover?.[t.q]) return;
+        if (alreadyAncestors.has(t.id)) return;
+        // root 정보 (최초 발생일 + 내용)
+        const rootDate = t.carriedFromDate || sk;
+        const key = `${rootDate}|${t.text}|${t.q}`;
+        // 더 최근 sk가 있으면 덮어쓰기 (체인의 마지막 인스턴스 우선)
+        const prev = candidatesByRoot.get(key);
+        if (!prev || sk > prev.sk) {
+          candidatesByRoot.set(key, { task: t, sk, rootDate });
+        }
+      });
+    });
 
     const toCarry = [];
-    sourceKeys.forEach((sk) => {
-      (wsData[sk]?.tasks || []).forEach((t) => {
-        if (settings.carryover?.[t.q] && !t.done && !already.has(t.id)) {
-          toCarry.push({
-            ...t,
-            id: newId(),
-            carriedFrom: t.id,
-            carriedFromDate: sk,
-            done: false,
-            created: Date.now(),
-          });
-        }
+    candidatesByRoot.forEach(({ task: t, rootDate }) => {
+      toCarry.push({
+        ...t,
+        id: newId(),
+        carriedFrom: t.id,
+        carriedFromDate: rootDate, // 최초 발생일 유지
+        done: false,
+        created: Date.now(),
       });
     });
 
@@ -2964,7 +3010,7 @@ function AddTaskModal({ activeQuadrant, setActiveQuadrant, newTaskText, setNewTa
             borderRadius: 4, marginBottom: 10,
             borderLeft: `2px solid ${qColor}`,
           }}>
-            미완료 시 자동 이월 · {isWeekend(currentDate) ? '주말 트랙 (토↔일)' : '평일 트랙 (월~금)'}
+            미완료 시 자동 이월 · 매일 끊김 없이 (連續)
           </div>
         )}
         <textarea
