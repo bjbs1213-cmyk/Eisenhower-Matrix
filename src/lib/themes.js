@@ -16,7 +16,8 @@
 
 // ─────────────────────────────────────────────
 // 강조색 변형 정의 (强調 色 變形)
-// 각 베이스 테마는 강조색에 따라 accent + q1 변경
+// 각 베이스 테마는 동일한 q1~q4 사용, accent만 다름
+// (4분면 색은 매트릭스 의미 식별자라 고정 - 變更 不可)
 // ─────────────────────────────────────────────
 
 const MIDNIGHT_BASE = {
@@ -89,7 +90,6 @@ export const THEMES = {
     accentName: '블루',
     ...MIDNIGHT_BASE,
     accent: '#4A90E2',
-    q2: '#4A90E2', // 강조색을 q2(계획 수립)에 반영
   },
   'midnight-purple': {
     id: 'midnight-purple',
@@ -100,7 +100,6 @@ export const THEMES = {
     accentName: '퍼플',
     ...MIDNIGHT_BASE,
     accent: '#7D5FC3',
-    q2: '#7D5FC3',
   },
   'midnight-forest': {
     id: 'midnight-forest',
@@ -111,7 +110,6 @@ export const THEMES = {
     accentName: '포레스트',
     ...MIDNIGHT_BASE,
     accent: '#3A8A6B',
-    q2: '#3A8A6B',
   },
 
   // ─── 시안 ② 종이 노트 (溫紙) ───
@@ -134,7 +132,6 @@ export const THEMES = {
     accentName: '올리브',
     ...PAPER_BASE,
     accent: '#6B7C3F',
-    q2: '#6B7C3F',
   },
   'paper-wine': {
     id: 'paper-wine',
@@ -145,7 +142,6 @@ export const THEMES = {
     accentName: '와인',
     ...PAPER_BASE,
     accent: '#7A3A45',
-    q1: '#7A3A45',
   },
 
   // ─── 시안 ③ 모더니즘 미니멀 (簡潔) ───
@@ -168,7 +164,6 @@ export const THEMES = {
     accentName: '네이비',
     ...MINIMAL_BASE,
     accent: '#1F3A5F',
-    q2: '#1F3A5F',
   },
   'minimal-charcoal': {
     id: 'minimal-charcoal',
