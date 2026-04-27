@@ -3810,8 +3810,16 @@ function Sidebar(p) {
       {/* 브랜드 헤더 (商標) */}
       <div className="brand-caption">EISENHOWER MATRIX</div>
       <div className="brand-title">아이젠하워 매트릭스</div>
-      <div className="brand-sub" style={{ marginBottom: 18 }}>일일 우선순위 (日日 優先順位)</div>
-      <div style={{ marginBottom: 22 }}><SyncBadge status={p.syncStatus} /></div>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+        marginBottom: 18,
+      }}>
+        <div className="brand-sub" style={{ marginBottom: 0 }}>일일 우선순위 (日日 優先順位)</div>
+        <SyncBadge status={p.syncStatus} />
+      </div>
 
       {/* 1. 업무 / 자기개발 토글 (作業 區劃) - 가로 배치 */}
       <div style={{ marginBottom: 22 }}>
