@@ -935,9 +935,15 @@ function ThemeStyles({ theme }) {
         }
 
       .workspace-bar {
-        display: inline-flex; gap: 3px; padding: 4px;
+        display: flex; gap: 3px; padding: 4px;
         background: var(--panel2); border-radius: 9px;
         border: 1px solid var(--border);
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .workspace-bar > .ws-btn {
+        flex: 1;
+        justify-content: center;
       }
       .ws-btn {
         padding: 8px 14px; font-size: 14px;
@@ -1253,6 +1259,46 @@ function ThemeStyles({ theme }) {
         padding: 10px 12px;
         justify-content: center;
       }
+
+      /* VIEW 2x2 그리드 버튼 (畵面 그리드) */
+      .view-grid-btn {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 14px 8px;
+        background: var(--panel2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        cursor: pointer;
+        color: var(--text-dim);
+        font-family: 'NoonnuGothic', Inter, sans-serif;
+        transition: all 0.15s ease;
+      }
+      .view-grid-btn:hover {
+        background: var(--panel);
+        border-color: var(--accent);
+        color: var(--text);
+      }
+      .view-grid-btn.active {
+        background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 15%, var(--panel)), var(--panel));
+        border-color: var(--accent);
+        color: var(--accent);
+        box-shadow: 0 2px 8px -2px var(--accent), inset 0 0 0 1px var(--accent);
+      }
+      .view-grid-label {
+        font-family: Inter, sans-serif;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .view-grid-hanja {
+        font-family: 'NoonnuGothic', sans-serif;
+        font-size: 9px;
+        opacity: 0.7;
+      }
+      .view-grid-btn.active .view-grid-hanja { opacity: 0.9; }
       .nav-label {
         font-family: Inter, sans-serif; font-size: 11px;
         color: var(--text-mute); letter-spacing: 0.12em;
@@ -3737,6 +3783,15 @@ function WideLayout(p) {
 // Shared Sidebar for Standard/Wide
 function Sidebar(p) {
   const sidebarWidth = p.layout?.sidebarWidth ?? 300;
+
+  // VIEW 메뉴 정의 (2x2 그리드)
+  const views = [
+    { id: 'matrix', label: 'Matrix', hanja: '매트릭스', icon: Calendar, key: 'F→1' },
+    { id: 'routines', label: 'Routines', hanja: '루틴', icon: Repeat, key: 'F→2' },
+    { id: 'reflect', label: 'Reflect', hanja: '회고', icon: Moon, key: 'F→3' },
+    { id: 'weekly', label: 'Weekly', hanja: '주간', icon: BarChart3, key: 'F→4' },
+  ];
+
   return (
     <aside className="sidebar-scroll" style={{
       width: sidebarWidth,
@@ -3752,51 +3807,18 @@ function Sidebar(p) {
       top: 0,
       boxSizing: 'border-box',
     }}>
+      {/* 브랜드 헤더 (商標) */}
       <div className="brand-caption">EISENHOWER MATRIX</div>
       <div className="brand-title">아이젠하워 매트릭스</div>
       <div className="brand-sub" style={{ marginBottom: 18 }}>일일 우선순위 (日日 優先順位)</div>
       <div style={{ marginBottom: 22 }}><SyncBadge status={p.syncStatus} /></div>
 
-      {/* Views */}
+      {/* 1. 업무 / 자기개발 토글 (作業 區劃) - 가로 배치 */}
       <div style={{ marginBottom: 22 }}>
-        <div className="nav-label">Views</div>
-        <button
-          className={`nav-btn ${p.view === 'matrix' ? 'active' : ''}`}
-          onClick={() => p.setView('matrix')}
-          title="Matrix (F → 1)"
-        >
-          <Calendar size={16} /> Matrix
-        </button>
-        <button
-          className={`nav-btn ${p.view === 'routines' ? 'active' : ''}`}
-          onClick={() => p.setView('routines')}
-          title="Routines (F → 2)"
-        >
-          <Repeat size={16} /> Routines
-        </button>
-        <button
-          className={`nav-btn ${p.view === 'reflect' ? 'active' : ''}`}
-          onClick={() => p.setView('reflect')}
-          title="Reflect (F → 3)"
-        >
-          <Moon size={16} /> Reflect
-        </button>
-        <button
-          className={`nav-btn ${p.view === 'weekly' ? 'active' : ''}`}
-          onClick={() => p.setView('weekly')}
-          title="Weekly (F → 4)"
-        >
-          <BarChart3 size={16} /> Weekly
-        </button>
+        <WorkspaceToggle workspace={p.workspace} setWorkspace={p.setWorkspace} />
       </div>
 
-      {/* Workspace */}
-      <div style={{ marginBottom: 22 }}>
-        <div className="nav-label">Workspace</div>
-        <WorkspaceToggle workspace={p.workspace} setWorkspace={p.setWorkspace} vertical />
-      </div>
-
-      {/* OKR · 분기 목표 (v2.2) */}
+      {/* 2. 분기 목표 + KR (分期 目標) */}
       <div style={{ marginBottom: 22 }}>
         <OkrSidebar
           workspace={p.workspace}
@@ -3810,7 +3832,34 @@ function Sidebar(p) {
         />
       </div>
 
-      {/* 오늘의 한도 · 1-3-5 法則 (v2.2) */}
+      {/* 3. VIEW 메뉴 - 2x2 그리드 (二行 二列) */}
+      <div style={{ marginBottom: 22 }}>
+        <div className="nav-label">View · 화면 (畵面)</div>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 6,
+        }}>
+          {views.map((v) => {
+            const Icon = v.icon;
+            const active = p.view === v.id;
+            return (
+              <button
+                key={v.id}
+                className={`view-grid-btn ${active ? 'active' : ''}`}
+                onClick={() => p.setView(v.id)}
+                title={`${v.label} · ${v.hanja} (${v.key})`}
+              >
+                <Icon size={18} />
+                <span className="view-grid-label">{v.label}</span>
+                <span className="view-grid-hanja">{v.hanja}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 4. 오늘의 한도 · 1-3-5 法則 */}
       <div style={{ marginBottom: 22 }}>
         <div className="nav-label">오늘의 한도 · 1-3-5 法則</div>
         <OneThreeFiveCounter
@@ -3818,39 +3867,7 @@ function Sidebar(p) {
         />
       </div>
 
-      {/* This Week */}
-      <div style={{ marginBottom: 22 }}>
-        <div className="nav-label">This Week</div>
-        <div style={{ marginBottom: 12 }}>
-          <MiniCalendar weekKeys={p.weekKeys} currentDate={p.currentDate} setCurrentDate={p.setCurrentDate} wsData={p.wsData} />
-        </div>
-        <div className="stat-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <div>
-              <div className="stat-label">Today</div>
-              <div className="stat-big">{p.dayStats.pct}%</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div className="stat-label">Week</div>
-              <div className="stat-big" style={{ fontSize: 22, color: 'var(--text-dim)' }}>{p.weekPct}%</div>
-            </div>
-          </div>
-          <div className="progress-bar"><div className="progress-fill" style={{ width: `${p.dayStats.pct}%` }} /></div>
-          <div className="stat-sub">{p.dayStats.done}/{p.dayStats.total} today · {p.weekDone}/{p.weekTotal} week</div>
-        </div>
-      </div>
-
-      {/* By Priority */}
-      <div style={{ marginBottom: 22 }}>
-        <div className="nav-label-row">
-          <span className="nav-label" style={{ marginBottom: 0 }}>과업 중요도 · 주간</span>
-          {p.carryStats?.today > 0 && (
-            <CarryIndicator carryStats={p.carryStats} theme={p.theme} />
-          )}
-        </div>
-        <QuadrantStats weekStats={p.weekStats} theme={p.theme} carryByQ={p.carryStats?.byQ} />
-      </div>
-      {/* Carryover 이월 설정 */}
+      {/* 5. CARRYOVER 이월 설정 (移越) - 유지 */}
       <div style={{ marginBottom: 22 }}>
         <div className="nav-label-row">
           <span className="nav-label" style={{ marginBottom: 0 }}>Carryover · 이월</span>
@@ -3918,25 +3935,22 @@ function Sidebar(p) {
         </div>
       </div>
 
-      {/* Logout + Shortcuts (短縮 鍵) */}
-      <div style={{ marginTop: 'auto' }}>
-        <div className="nav-btn-row">
-          <button className="nav-btn" onClick={p.onLogout} title="로그아웃">
-            <LogOut size={16} />
-            <span>로그아웃</span>
-          </button>
-          <button
-            className="nav-btn nav-btn-icon-only"
-            onClick={() => p.setHelpOpen(true)}
-            title="단축키 안내 (?)"
-          >
-            <Keyboard size={16} />
-          </button>
-        </div>
+      {/* 단축키 안내 버튼 (短縮鍵 案內) - 하단 고정 */}
+      <div style={{ marginTop: 'auto', paddingTop: 18 }}>
+        <button
+          className="nav-btn nav-btn-icon-only"
+          onClick={() => p.setHelpOpen(true)}
+          title="단축키 안내 (?)"
+          style={{ width: '100%' }}
+        >
+          <Keyboard size={16} />
+          <span style={{ marginLeft: 6 }}>단축키 (?)</span>
+        </button>
       </div>
     </aside>
   );
 }
+
 
 // Shared MainArea
 function MainArea(p) {
