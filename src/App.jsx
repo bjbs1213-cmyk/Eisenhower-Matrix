@@ -799,7 +799,7 @@ function ThemeStyles({ theme }) {
         border-radius: 6px; color: var(--text-dim); cursor: pointer;
         display: flex; align-items: center;
       }
-      .icon-btn:hover { background: var(--panel2); color: var(--text); }
+      .icon-btn:hover { background: var(--panel2); color: var(--accent); border-color: var(--accent); }
       /* 드래그 핸들 */
       .task-handle {
         display: flex;
@@ -948,9 +948,10 @@ function ThemeStyles({ theme }) {
         transition: all 0.15s;
       }
       .ws-btn.active {
-        background: var(--panel); color: var(--text);
+        background: var(--panel); color: var(--accent);
         font-weight: 500;
         box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        border-left: 2px solid var(--accent);
       }
 
       .theme-bar {
@@ -1149,7 +1150,7 @@ function ThemeStyles({ theme }) {
         font-family: 'NoonnuGothic', sans-serif;
         margin-top: auto; transition: all 0.15s;
       }
-      .add-btn:hover { border-color: var(--text); color: var(--text); }
+      .add-btn:hover { border-color: var(--accent); color: var(--accent); }
       .count-tag {
         font-size: 11px; color: var(--text-dim); background: var(--panel);
         border: 1px solid var(--border);
@@ -1212,7 +1213,7 @@ function ThemeStyles({ theme }) {
       }
       .nav-btn > svg { flex-shrink: 0; }
       .nav-btn:hover { background: var(--panel2); color: var(--text); }
-      .nav-btn.active { background: var(--text); color: var(--bg); font-weight: 500; }
+      .nav-btn.active { background: var(--accent); color: var(--bg); font-weight: 500; }
       .nav-btn-row {
         display: flex; gap: 6px; align-items: stretch;
       }
@@ -1293,10 +1294,10 @@ function ThemeStyles({ theme }) {
         justify-content: center; font-size: 10px; color: var(--text-dim);
         transition: all 0.15s;
       }
-      .mini-day:hover { border-color: var(--text); }
+      .mini-day:hover { border-color: var(--accent); }
       .mini-day.today { border-color: var(--text); border-width: 1.5px; }
       .mini-day.weekend { background: var(--panel3); }
-      .mini-day.active { background: var(--text); border-color: var(--text); }
+      .mini-day.active { background: var(--accent); border-color: var(--accent); }
       .mini-day.active .mini-wd, .mini-day.active .mini-d { color: var(--bg); }
       .mini-wd { font-family: Inter, sans-serif; font-size: 10px; }
       .mini-d {
