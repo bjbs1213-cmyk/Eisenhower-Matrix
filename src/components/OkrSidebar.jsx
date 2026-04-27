@@ -1,22 +1,25 @@
 import { useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, GripVertical } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 /**
- * OKR 사이드바 (分期 目標 + 主要 結果)
- *
- * v2.1 호환:
- * - workspace별로 별도 Objective 보유 (work / self)
- * - task의 done(완료), kr_id(KR 연결) 필드 사용
- * - storage.saveObjective, saveKeyResult, deleteObjective, deleteKeyResult API 사용
- *
- * @param {string} workspace - 'work' | 'self'
- * @param {Array} objectives - 전체 Objective 목록
- * @param {Array} keyResults - 전체 KR 목록
- * @param {object} wsData - 현재 workspace의 모든 날짜별 task 데이터 (진척률 계산용)
- * @param {Function} onObjectiveSave - (objective) => void
- * @param {Function} onObjectiveDelete - (id) => void
- * @param {Function} onKeyResultSave - (kr) => void
- * @param {Function} onKeyResultDelete - (id) => void
+ * OKR 사이드바 (分期 目標 + 主要 結果) v2.2
+ * - KR 드래그로 순서 변경 가능
+ * - KR-N 라벨은 표시 순서대로 자동 부여
+ * - order_index로 정렬 영구 저장
  */
 export default function OkrSidebar({
   workspace,
@@ -30,12 +33,10 @@ export default function OkrSidebar({
 }) {
   const quarter = getCurrentQuarter();
 
-  // 현재 workspace + 분기의 Objective 찾기
   const currentObjective = (objectives || []).find(
     (o) => (o.workspace || 'work') === workspace && o.quarter === quarter
   );
 
-  // 현재 Objective의 KR들
   const currentKrs = currentObjective
     ? (keyResults || [])
         .filter((kr) => kr.objective_id === currentObjective.id)
@@ -47,7 +48,10 @@ export default function OkrSidebar({
   const [editingKrId, setEditingKrId] = useState(null);
   const [editingKrText, setEditingKrText] = useState('');
 
-  // KR별 진척률 계산: 해당 KR 태그가 붙은 모든 task 중 완료 비율
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
+
   function calculateKrProgress(krId) {
     const allTasks = collectAllTasks(wsData);
     const tagged = allTasks.filter((t) => t.kr_id === krId);
@@ -56,7 +60,6 @@ export default function OkrSidebar({
     return Math.round((done / tagged.length) * 100);
   }
 
-  // KR별 연결된 task 개수
   function countKrTasks(krId) {
     const allTasks = collectAllTasks(wsData);
     const tagged = allTasks.filter((t) => t.kr_id === krId);
@@ -99,7 +102,6 @@ export default function OkrSidebar({
   async function handleKrSave(kr) {
     const trimmed = editingKrText.trim();
     if (!trimmed) {
-      // 빈 KR은 삭제
       await onKeyResultDelete(kr.id);
     } else {
       await onKeyResultSave({ ...kr, title: trimmed });
@@ -114,35 +116,50 @@ export default function OkrSidebar({
     }
   }
 
+  // DnD 종료 - 순서 재배치
+  async function handleDragEnd(event) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = currentKrs.findIndex((kr) => kr.id === active.id);
+    const newIndex = currentKrs.findIndex((kr) => kr.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const reordered = arrayMove(currentKrs, oldIndex, newIndex);
+
+    for (let i = 0; i < reordered.length; i++) {
+      const kr = reordered[i];
+      if (kr.order_index !== i) {
+        await onKeyResultSave({ ...kr, order_index: i });
+      }
+    }
+  }
+
   return (
     <div>
       <div className="nav-label-row">
         <span className="nav-label" style={{ marginBottom: 0 }}>
           분기 목표 · 分期 目標
         </span>
-        <span
-          style={{
-            fontFamily: 'Inter, sans-serif',
-            fontSize: 9,
-            fontWeight: 600,
-            color: 'var(--text-mute)',
-            letterSpacing: '0.05em',
-          }}
-        >
+        <span style={{
+          fontFamily: 'Inter, sans-serif',
+          fontSize: 9, fontWeight: 600,
+          color: 'var(--text-mute)',
+          letterSpacing: '0.05em',
+        }}>
           {quarter}
         </span>
       </div>
 
       {/* Objective */}
-      <div
-        style={{
-          padding: '10px 12px',
-          background: 'var(--panel2)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          marginBottom: 10,
-        }}
-      >
+      <div style={{
+        padding: '10px 12px',
+        background: 'var(--panel2)',
+        border: '1px solid var(--border)',
+        borderLeft: currentObjective?.title ? '3px solid var(--accent)' : '1px solid var(--border)',
+        borderRadius: 8,
+        marginBottom: 10,
+      }}>
         {editingObj ? (
           <textarea
             value={objText}
@@ -195,187 +212,236 @@ export default function OkrSidebar({
         )}
       </div>
 
-      {/* Key Results */}
+      {/* KR 리스트 - DnD 정렬 */}
       {currentObjective && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {currentKrs.map((kr, idx) => {
-            const progress = calculateKrProgress(kr.id);
-            const counts = countKrTasks(kr.id);
-            const isEditing = editingKrId === kr.id;
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={currentKrs.map((kr) => kr.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {currentKrs.map((kr, idx) => (
+                <SortableKr
+                  key={kr.id}
+                  kr={kr}
+                  idx={idx}
+                  isEditing={editingKrId === kr.id}
+                  editingText={editingKrText}
+                  setEditingText={setEditingKrText}
+                  onStartEdit={(t) => {
+                    setEditingKrId(kr.id);
+                    setEditingKrText(t || '');
+                  }}
+                  onCancelEdit={() => {
+                    setEditingKrId(null);
+                    setEditingKrText('');
+                    if (!kr.title) onKeyResultDelete(kr.id);
+                  }}
+                  onSave={() => handleKrSave(kr)}
+                  onDelete={() => handleKrDelete(kr.id)}
+                  progress={calculateKrProgress(kr.id)}
+                  counts={countKrTasks(kr.id)}
+                />
+              ))}
 
-            return (
-              <div
-                key={kr.id}
-                style={{
-                  background: 'var(--panel2)',
-                  border: '1px solid var(--border-soft)',
-                  borderRadius: 6,
-                  padding: '6px 8px',
-                }}
-              >
-                {isEditing ? (
-                  <input
-                    type="text"
-                    value={editingKrText}
-                    onChange={(e) => setEditingKrText(e.target.value)}
-                    onBlur={() => handleKrSave(kr)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleKrSave(kr);
-                      if (e.key === 'Escape') {
-                        setEditingKrId(null);
-                        setEditingKrText('');
-                        if (!kr.title) onKeyResultDelete(kr.id);
-                      }
-                    }}
-                    autoFocus
-                    placeholder={`KR-${idx + 1} 핵심 결과`}
-                    style={{
-                      width: '100%',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--accent)',
-                      borderRadius: 4,
-                      padding: '3px 6px',
-                      fontSize: 11,
-                      color: 'var(--text)',
-                      fontFamily: 'NoonnuGothic, Pretendard, sans-serif',
-                      outline: 'none',
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                ) : (
-                  <>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 6,
-                        marginBottom: 4,
-                      }}
-                    >
-                      <div
-                        onClick={() => {
-                          setEditingKrId(kr.id);
-                          setEditingKrText(kr.title || '');
-                        }}
-                        style={{
-                          flex: 1,
-                          fontSize: 11,
-                          color: 'var(--text)',
-                          fontFamily: 'NoonnuGothic, Pretendard, sans-serif',
-                          cursor: 'pointer',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                        title={kr.title}
-                      >
-                        <span
-                          style={{
-                            fontFamily: 'Inter, sans-serif',
-                            fontSize: 9,
-                            fontWeight: 600,
-                            color: 'var(--accent)',
-                            marginRight: 4,
-                          }}
-                        >
-                          KR-{idx + 1}
-                        </span>
-                        {kr.title || <span style={{ color: 'var(--text-mute)' }}>이름 없음</span>}
-                      </div>
-                      <span
-                        style={{
-                          fontFamily: 'Inter, sans-serif',
-                          fontSize: 11,
-                          fontWeight: 600,
-                          color: 'var(--text-dim)',
-                        }}
-                      >
-                        {progress}%
-                      </span>
-                      <button
-                        onClick={() => handleKrDelete(kr.id)}
-                        title="KR 삭제"
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          padding: 0,
-                          cursor: 'pointer',
-                          color: 'var(--text-mute)',
-                          display: 'flex',
-                          alignItems: 'center',
-                        }}
-                      >
-                        <X size={11} />
-                      </button>
-                    </div>
-                    <div
-                      style={{
-                        height: 3,
-                        background: 'var(--border)',
-                        borderRadius: 2,
-                        overflow: 'hidden',
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: `${progress}%`,
-                          height: '100%',
-                          background: 'var(--accent)',
-                          transition: 'width 0.3s ease',
-                        }}
-                      />
-                    </div>
-                    {counts.total > 0 && (
-                      <div
-                        style={{
-                          marginTop: 3,
-                          fontFamily: 'Inter, sans-serif',
-                          fontSize: 9,
-                          color: 'var(--text-mute)',
-                          textAlign: 'right',
-                        }}
-                      >
-                        {counts.done} / {counts.total} 업무
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            );
-          })}
-
-          {currentKrs.length < 5 && (
-            <button
-              onClick={handleAddKr}
-              style={{
-                background: 'transparent',
-                border: '1px dashed var(--border)',
-                borderRadius: 6,
-                padding: '6px 8px',
-                fontSize: 11,
-                color: 'var(--text-mute)',
-                fontFamily: 'NoonnuGothic, Pretendard, sans-serif',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 4,
-              }}
-            >
-              <Plus size={11} /> KR 추가
-            </button>
-          )}
-        </div>
+              {currentKrs.length < 5 && (
+                <button
+                  onClick={handleAddKr}
+                  style={{
+                    background: 'transparent',
+                    border: '1px dashed var(--border)',
+                    borderRadius: 6,
+                    padding: '6px 8px',
+                    fontSize: 11,
+                    color: 'var(--text-mute)',
+                    fontFamily: 'NoonnuGothic, Pretendard, sans-serif',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 4,
+                  }}
+                >
+                  <Plus size={11} /> KR 추가
+                </button>
+              )}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
     </div>
   );
 }
 
-// ─────────────────────────────────────────
-// 헬퍼 함수
-// ─────────────────────────────────────────
+// 드래그 가능한 KR 한 줄
+function SortableKr({
+  kr, idx, isEditing, editingText, setEditingText,
+  onStartEdit, onCancelEdit, onSave, onDelete,
+  progress, counts,
+}) {
+  const {
+    attributes, listeners, setNodeRef,
+    transform, transition, isDragging,
+  } = useSortable({ id: kr.id });
 
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    zIndex: isDragging ? 10 : 'auto',
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        ...style,
+        background: 'var(--panel2)',
+        border: '1px solid var(--border-soft)',
+        borderRadius: 6,
+        padding: '6px 8px',
+      }}
+    >
+      {isEditing ? (
+        <input
+          type="text"
+          value={editingText}
+          onChange={(e) => setEditingText(e.target.value)}
+          onBlur={onSave}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onSave();
+            if (e.key === 'Escape') onCancelEdit();
+          }}
+          autoFocus
+          placeholder={`KR-${idx + 1} 핵심 결과`}
+          style={{
+            width: '100%',
+            background: 'var(--panel)',
+            border: '1px solid var(--accent)',
+            borderRadius: 4,
+            padding: '3px 6px',
+            fontSize: 11,
+            color: 'var(--text)',
+            fontFamily: 'NoonnuGothic, Pretendard, sans-serif',
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+      ) : (
+        <>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            marginBottom: 4,
+          }}>
+            {/* 드래그 핸들 */}
+            <button
+              {...attributes}
+              {...listeners}
+              title="드래그하여 순서 변경 (移動)"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'grab',
+                color: 'var(--text-mute)',
+                display: 'flex',
+                alignItems: 'center',
+                touchAction: 'none',
+              }}
+            >
+              <GripVertical size={11} />
+            </button>
+
+            <div
+              onClick={() => onStartEdit(kr.title || '')}
+              style={{
+                flex: 1,
+                fontSize: 11,
+                color: 'var(--text)',
+                fontFamily: 'NoonnuGothic, Pretendard, sans-serif',
+                cursor: 'pointer',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={kr.title}
+            >
+              <span style={{
+                fontFamily: 'Inter, sans-serif',
+                fontSize: 9,
+                fontWeight: 600,
+                color: 'var(--accent)',
+                marginRight: 4,
+              }}>
+                KR-{idx + 1}
+              </span>
+              {kr.title || <span style={{ color: 'var(--text-mute)' }}>이름 없음</span>}
+            </div>
+
+            <span style={{
+              fontFamily: 'Inter, sans-serif',
+              fontSize: 11,
+              fontWeight: 600,
+              color: 'var(--text-dim)',
+            }}>
+              {progress}%
+            </span>
+
+            <button
+              onClick={onDelete}
+              title="KR 삭제"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                color: 'var(--text-mute)',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              <X size={11} />
+            </button>
+          </div>
+
+          <div style={{
+            height: 3,
+            background: 'var(--border)',
+            borderRadius: 2,
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              width: `${progress}%`,
+              height: '100%',
+              background: 'var(--accent)',
+              transition: 'width 0.3s ease',
+            }} />
+          </div>
+
+          {counts.total > 0 && (
+            <div style={{
+              marginTop: 3,
+              fontFamily: 'Inter, sans-serif',
+              fontSize: 9,
+              color: 'var(--text-mute)',
+              textAlign: 'right',
+            }}>
+              {counts.done} / {counts.total} 업무
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// 헬퍼 함수
 function getCurrentQuarter() {
   const now = new Date();
   const year = now.getFullYear();
@@ -383,8 +449,6 @@ function getCurrentQuarter() {
   return `${year}-Q${q}`;
 }
 
-// wsData = { '2026-04-27': { tasks: [...], evening: '' }, ... }
-// 모든 날짜의 task를 한 배열로 모음
 function collectAllTasks(wsData) {
   if (!wsData) return [];
   const all = [];
