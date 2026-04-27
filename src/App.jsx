@@ -1813,6 +1813,24 @@ function ThemeToggle({ themeId, setThemeId }) {
 function QuadrantCard({ q, qColor, tasks, onAdd, onToggle, onDelete, onSelect, isOverFromOther, keyResults }) {
   const quadrant = QUADRANTS[q];
 
+  // 분면별 한글 메인 명칭 + 한자 (v2.2)
+  const QUADRANT_META = {
+    Q1: { ko: '즉시 처리', en: 'Do First', hanja: 'Q1 · 緊急 + 重要' },
+    Q2: { ko: '계획 수립', en: 'Schedule', hanja: 'Q2 · 重要' },
+    Q3: { ko: '위임', en: 'Delegate', hanja: 'Q3 · 緊急' },
+    Q4: { ko: '제거', en: 'Eliminate', hanja: 'Q4 · 除去' },
+  };
+  const meta = QUADRANT_META[q] || { ko: quadrant.label, en: quadrant.label, hanja: q };
+
+  // 미완료 task의 1-3-5 분포 (分布) 계산
+  const pending = tasks.filter((t) => !t.done);
+  const sizeDist = {
+    big: pending.filter((t) => (t.size || 'small') === 'big').length,
+    medium: pending.filter((t) => (t.size || 'small') === 'medium').length,
+    small: pending.filter((t) => (t.size || 'small') === 'small').length,
+  };
+  const totalPending = sizeDist.big + sizeDist.medium + sizeDist.small;
+
   // 사분면을 Droppable Zone으로 등록
   const { setNodeRef, isOver } = useDroppable({
     id: `droppable-${q}`,
@@ -1840,8 +1858,101 @@ function QuadrantCard({ q, qColor, tasks, onAdd, onToggle, onDelete, onSelect, i
       }}
     >
       <div className="card-head">
-        <div className="card-label" style={{ color: qColor, fontSize: 20 }}>{quadrant.label}</div>
-        <div className="card-sub" style={{ fontSize: 14 }}>{quadrant.sub}</div>
+        <div style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {/* 한글 메인 명칭 (主 名稱) */}
+            <div style={{
+              fontFamily: 'NoonnuGothic, Pretendard, sans-serif',
+              fontSize: 22,
+              fontWeight: 700,
+              color: qColor,
+              letterSpacing: '-0.02em',
+              lineHeight: 1.1,
+            }}>
+              {meta.ko}
+            </div>
+            {/* 영문 + 한자 캡션 (英文 漢字 副題) */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: 8,
+              marginTop: 4,
+              flexWrap: 'wrap',
+            }}>
+              <span style={{
+                fontFamily: 'Inter, sans-serif',
+                fontSize: 13,
+                fontWeight: 600,
+                color: 'var(--text-dim)',
+                letterSpacing: '-0.01em',
+              }}>
+                {meta.en}
+              </span>
+              <span style={{
+                fontFamily: 'Inter, sans-serif',
+                fontSize: 10,
+                fontWeight: 600,
+                color: 'var(--text-mute)',
+                letterSpacing: '0.05em',
+              }}>
+                {meta.hanja}
+              </span>
+            </div>
+          </div>
+
+          {/* 1-3-5 분포 라벨 (分布) - 우측 상단 */}
+          {totalPending > 0 && (
+            <div style={{
+              display: 'flex',
+              gap: 4,
+              alignItems: 'center',
+              flexShrink: 0,
+              fontFamily: 'Inter, sans-serif',
+              fontSize: 10,
+              fontWeight: 600,
+              color: 'var(--text-mute)',
+            }}>
+              {sizeDist.big > 0 && (
+                <span title="큰일 (大)" style={{
+                  padding: '2px 5px',
+                  background: '#E66B5C18',
+                  border: '1px solid #E66B5C44',
+                  borderRadius: 3,
+                  color: '#E66B5C',
+                }}>
+                  大{sizeDist.big}
+                </span>
+              )}
+              {sizeDist.medium > 0 && (
+                <span title="중간 (中)" style={{
+                  padding: '2px 5px',
+                  background: '#E6A65C18',
+                  border: '1px solid #E6A65C44',
+                  borderRadius: 3,
+                  color: '#E6A65C',
+                }}>
+                  中{sizeDist.medium}
+                </span>
+              )}
+              {sizeDist.small > 0 && (
+                <span title="작은일 (小)" style={{
+                  padding: '2px 5px',
+                  background: 'var(--panel2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 3,
+                  color: 'var(--text-dim)',
+                }}>
+                  小{sizeDist.small}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
