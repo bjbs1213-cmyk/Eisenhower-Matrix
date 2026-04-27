@@ -2245,7 +2245,7 @@ function getTagColor(tag) {
   return TAG_COLORS[hash % TAG_COLORS.length];
 }
 
-function TaskDetailPanel({ task, theme, currentDate, onClose, onUpdate, onDelete }) {
+function TaskDetailPanel({ task, theme, currentDate, onClose, onUpdate, onDelete, keyResults }) {
   const [localText, setLocalText] = useState(task?.text || '');
   const [localNotes, setLocalNotes] = useState(task?.notes || '');
   const saveTimerRef = useRef(null);
@@ -2408,6 +2408,96 @@ function TaskDetailPanel({ task, theme, currentDate, onClose, onUpdate, onDelete
                 textDecoration: task.done ? 'line-through' : 'none',
               }}
             />
+          </div>
+
+          {/* OKR 연결 (分期 目標 連結) - v2.2 신규 */}
+          <div style={{ marginBottom: 22 }}>
+            <div className="td-label">분기 목표 (分期 目標) · KR 연결</div>
+            <select
+              value={task.kr_id || ''}
+              onChange={(e) => onUpdate(task.id, { kr_id: e.target.value || null })}
+              className="td-input"
+              style={{
+                width: '100%',
+                fontFamily: 'Pretendard, Inter, sans-serif',
+                fontSize: 13,
+                cursor: 'pointer',
+              }}
+            >
+              <option value="">— 연결 안 함 —</option>
+              {(keyResults || []).map((kr, idx) => (
+                <option key={kr.id} value={kr.id}>
+                  KR-{idx + 1}: {kr.title || '(이름 없음)'}
+                </option>
+              ))}
+            </select>
+            {(!keyResults || keyResults.length === 0) && (
+              <div style={{
+                marginTop: 6,
+                fontSize: 11,
+                color: theme.textMute,
+                fontFamily: 'Pretendard, sans-serif',
+              }}>
+                사이드바 "분기 목표"에서 KR을 먼저 추가하세요.
+              </div>
+            )}
+          </div>
+
+          {/* 업무 크기 (業務 規模) · 1-3-5 法則 - v2.2 신규 */}
+          <div style={{ marginBottom: 22 }}>
+            <div className="td-label">업무 크기 (業務 規模) · 1-3-5 法則</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[
+                { id: 'big', label: '큰일', hanja: '大', limit: 1, color: theme.q1 },
+                { id: 'medium', label: '중간', hanja: '中', limit: 3, color: theme.q2 },
+                { id: 'small', label: '작은일', hanja: '小', limit: 5, color: theme.q3 },
+              ].map((opt) => {
+                const active = (task.size || 'small') === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => onUpdate(task.id, { size: opt.id })}
+                    style={{
+                      flex: 1,
+                      padding: '10px 8px',
+                      background: active ? `${opt.color}22` : 'transparent',
+                      border: `1px solid ${active ? opt.color : theme.border}`,
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      fontFamily: 'Pretendard, sans-serif',
+                      transition: 'all 0.15s ease',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 2,
+                    }}
+                  >
+                    <span style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: active ? opt.color : theme.textDim,
+                    }}>
+                      {opt.hanja}
+                    </span>
+                    <span style={{
+                      fontSize: 11,
+                      color: active ? theme.text : theme.textMute,
+                      fontWeight: active ? 600 : 400,
+                    }}>
+                      {opt.label}
+                    </span>
+                    <span style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: 9,
+                      color: theme.textMute,
+                    }}>
+                      한도 {opt.limit}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* 메모 (備忘) - Step 3에서 활성화될 자리 */}
@@ -3359,6 +3449,7 @@ function StandardLayout(p) {
           onClose={() => p.setSelectedTaskId(null)}
           onUpdate={p.updateTask}
           onDelete={p.deleteTask}
+          keyResults={p.keyResults}
         />
       </div>
     </>
@@ -3404,6 +3495,7 @@ function WideLayout(p) {
           onClose={() => p.setSelectedTaskId(null)}
           onUpdate={p.updateTask}
           onDelete={p.deleteTask}
+          keyResults={p.keyResults}
         />
       </div>
     </>
@@ -3884,6 +3976,7 @@ function CompactLayout(p) {
           onClose={() => p.setSelectedTaskId(null)}
           onUpdate={p.updateTask}
           onDelete={p.deleteTask}
+          keyResults={p.keyResults}
         />
 
         {/* Bottom tabs */}
