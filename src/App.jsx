@@ -15,7 +15,7 @@ import {
   getThemeForWorkspace, setThemeForWorkspace,
   getStoredWorkspace, setStoredWorkspace,
 } from './lib/supabase.js';
-import { THEMES, WORKSPACES } from './lib/themes.js';
+import { THEMES, WORKSPACES, THEME_GROUPS, THEME_GROUP_IDS } from './lib/themes.js';
 import {
   QUADRANTS, todayKey, keyToDate, formatDate, formatShort,
   getCarryTarget, isWeekend, getWeekKeys,
@@ -75,7 +75,7 @@ function MainApp({ onLogout }) {
   // 초기 로드 시 워크스페이스 변경 useEffect 트리거 방지용
   const isFirstRender = useRef(true);
 
-  const theme = THEMES[themeId] || THEMES.winter;
+  const theme = THEMES[themeId] || THEMES['midnight-blue'];
 
   // 테마 변경 시 → 현재 워크스페이스의 테마로 저장
   useEffect(() => {
@@ -1523,16 +1523,209 @@ function WorkspaceToggle({ workspace, setWorkspace, vertical }) {
 }
 
 function ThemeToggle({ themeId, setThemeId }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  // 외부 클릭 시 닫기
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    if (open) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [open]);
+
+  const currentTheme = THEMES[themeId] || THEMES['midnight-blue'];
+  const currentGroup = currentTheme.base || 'midnight';
+  const currentGroupData = THEME_GROUPS[currentGroup];
+
+  function handleGroupSelect(groupId) {
+    // 그룹 전환 시 첫 번째 강조색으로 자동 선택
+    const newThemeId = THEME_GROUPS[groupId].accents[0].id;
+    setThemeId(newThemeId);
+  }
+
+  function handleAccentSelect(accentThemeId) {
+    setThemeId(accentThemeId);
+  }
+
   return (
-    <div className="theme-bar">
-      {Object.values(THEMES).map((t) => (
-        <button
-          key={t.id}
-          className={`theme-chip ${t.id} ${themeId === t.id ? 'active' : ''}`}
-          onClick={() => setThemeId(t.id)}
-          title={t.name}
-        />
-      ))}
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(!open)}
+        title="테마 변경 (主題 變更)"
+        className="theme-toggle-btn"
+        style={{
+          width: 34,
+          height: 34,
+          background: 'transparent',
+          border: `1px solid ${currentTheme.border}`,
+          borderRadius: 6,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          padding: 0,
+          color: currentTheme.textDim,
+        }}
+      >
+        {/* 반달 아이콘 - 좌측 빈 원, 우측 채워짐 */}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 40,
+            right: 0,
+            background: currentTheme.panel,
+            border: `1px solid ${currentTheme.border}`,
+            borderRadius: 8,
+            padding: 12,
+            width: 260,
+            zIndex: 100,
+            boxShadow: '0 8px 24px -4px rgba(0,0,0,0.25)',
+            fontFamily: 'NoonnuGothic, Pretendard, sans-serif',
+          }}
+        >
+          {/* 베이스 테마 선택 (基底 主題) */}
+          <div style={{ fontSize: 11, color: currentTheme.text, fontWeight: 600, marginBottom: 2 }}>
+            테마 선택
+          </div>
+          <div style={{
+            fontFamily: 'Inter, sans-serif',
+            fontSize: 9,
+            color: currentTheme.textMute,
+            letterSpacing: '0.05em',
+            marginBottom: 8,
+          }}>
+            主題
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 12 }}>
+            {THEME_GROUP_IDS.map((gid) => {
+              const g = THEME_GROUPS[gid];
+              const selected = gid === currentGroup;
+              return (
+                <div
+                  key={gid}
+                  onClick={() => handleGroupSelect(gid)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: 7,
+                    background: selected ? currentTheme.panel2 : 'transparent',
+                    borderRadius: 5,
+                    border: selected ? `1px solid ${currentTheme.accent}` : '1px solid transparent',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {/* 색상 미리보기 */}
+                  <div
+                    style={{
+                      width: 18,
+                      height: 18,
+                      background: g.sampleBg,
+                      border: `1px solid ${currentTheme.border}`,
+                      borderRadius: 3,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 11,
+                      color: currentTheme.text,
+                      fontWeight: selected ? 600 : 400,
+                    }}>
+                      {g.name}
+                    </div>
+                    <div style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: 8,
+                      color: currentTheme.textMute,
+                      letterSpacing: '0.05em',
+                      marginTop: 1,
+                    }}>
+                      {g.hanja}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* 강조색 선택 (强調 色) */}
+          <div style={{
+            borderTop: `1px solid ${currentTheme.border}`,
+            paddingTop: 10,
+          }}>
+            <div style={{ fontSize: 11, color: currentTheme.text, fontWeight: 600, marginBottom: 2 }}>
+              강조 색상
+            </div>
+            <div style={{
+              fontFamily: 'Inter, sans-serif',
+              fontSize: 9,
+              color: currentTheme.textMute,
+              letterSpacing: '0.05em',
+              marginBottom: 8,
+            }}>
+              强調 色
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {currentGroupData.accents.map((acc) => {
+                const selected = acc.id === themeId;
+                return (
+                  <div
+                    key={acc.id}
+                    onClick={() => handleAccentSelect(acc.id)}
+                    style={{
+                      flex: 1,
+                      padding: '7px 4px',
+                      background: selected ? currentTheme.panel2 : 'transparent',
+                      border: selected ? `1px solid ${acc.color}` : `1px solid ${currentTheme.border}`,
+                      borderRadius: 5,
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 16,
+                        height: 16,
+                        background: acc.color,
+                        borderRadius: '50%',
+                        margin: '0 auto 4px',
+                      }}
+                    />
+                    <div style={{
+                      fontSize: 10,
+                      color: currentTheme.text,
+                      fontWeight: selected ? 600 : 400,
+                    }}>
+                      {acc.name}
+                    </div>
+                    <div style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: 8,
+                      color: currentTheme.textMute,
+                      marginTop: 1,
+                    }}>
+                      {acc.hanja}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
