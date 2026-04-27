@@ -1537,7 +1537,7 @@ function ThemeToggle({ themeId, setThemeId }) {
   );
 }
 
-function QuadrantCard({ q, qColor, tasks, onAdd, onToggle, onDelete, onSelect, isOverFromOther }) {
+function QuadrantCard({ q, qColor, tasks, onAdd, onToggle, onDelete, onSelect, isOverFromOther, keyResults }) {
   const quadrant = QUADRANTS[q];
 
   // 사분면을 Droppable Zone으로 등록
@@ -1596,6 +1596,7 @@ function QuadrantCard({ q, qColor, tasks, onAdd, onToggle, onDelete, onSelect, i
               onToggle={onToggle}
               onDelete={onDelete}
               onSelect={onSelect}
+              keyResults={keyResults}
             />
           ))}
         </div>
@@ -1613,7 +1614,7 @@ function QuadrantCard({ q, qColor, tasks, onAdd, onToggle, onDelete, onSelect, i
   );
 }
 
-function Matrix({ theme, tasksByQ, setActiveQuadrant, toggleTask, deleteTask, onSelect, onReorder, layout, setLayout, onLayoutCommit }) {
+function Matrix({ theme, tasksByQ, setActiveQuadrant, toggleTask, deleteTask, onSelect, onReorder, layout, setLayout, onLayoutCommit, keyResults }) {
   const colors = { Q1: theme.q1, Q2: theme.q2, Q3: theme.q3, Q4: theme.q4 };
   const matrixRef = useRef(null);
 
@@ -1738,6 +1739,7 @@ function Matrix({ theme, tasksByQ, setActiveQuadrant, toggleTask, deleteTask, on
             q="Q1" qColor={colors.Q1} tasks={tasksByQ.Q1}
             onAdd={setActiveQuadrant} onToggle={toggleTask} onDelete={deleteTask} onSelect={onSelect}
             isOverFromOther={overQ === 'Q1' && activeTask && activeTask.q !== 'Q1'}
+            keyResults={keyResults}
           />
         </div>
         {/* 가로 리사이저 (좌우) - 상단 */}
@@ -1760,6 +1762,7 @@ function Matrix({ theme, tasksByQ, setActiveQuadrant, toggleTask, deleteTask, on
             q="Q2" qColor={colors.Q2} tasks={tasksByQ.Q2}
             onAdd={setActiveQuadrant} onToggle={toggleTask} onDelete={deleteTask} onSelect={onSelect}
             isOverFromOther={overQ === 'Q2' && activeTask && activeTask.q !== 'Q2'}
+            keyResults={keyResults}
           />
         </div>
 
@@ -1800,6 +1803,7 @@ function Matrix({ theme, tasksByQ, setActiveQuadrant, toggleTask, deleteTask, on
             q="Q3" qColor={colors.Q3} tasks={tasksByQ.Q3}
             onAdd={setActiveQuadrant} onToggle={toggleTask} onDelete={deleteTask} onSelect={onSelect}
             isOverFromOther={overQ === 'Q3' && activeTask && activeTask.q !== 'Q3'}
+            keyResults={keyResults}
           />
         </div>
         {/* 가로 리사이저 (좌우) - 하단 */}
@@ -1822,6 +1826,7 @@ function Matrix({ theme, tasksByQ, setActiveQuadrant, toggleTask, deleteTask, on
             q="Q4" qColor={colors.Q4} tasks={tasksByQ.Q4}
             onAdd={setActiveQuadrant} onToggle={toggleTask} onDelete={deleteTask} onSelect={onSelect}
             isOverFromOther={overQ === 'Q4' && activeTask && activeTask.q !== 'Q4'}
+            keyResults={keyResults}
           />
         </div>
       </div>
@@ -3758,6 +3763,7 @@ function MainArea(p) {
             layout={p.layout}
             setLayout={p.setLayoutTemp}
             onLayoutCommit={p.commitLayout}
+            keyResults={p.keyResults}
           />
         </div>
       )}
@@ -3951,6 +3957,7 @@ function CompactLayout(p) {
               deleteTask={p.deleteTask}
               onSelect={p.setSelectedTaskId}
               onReorder={p.onReorder}
+              keyResults={p.keyResults}
             />
           </div>
         )}
