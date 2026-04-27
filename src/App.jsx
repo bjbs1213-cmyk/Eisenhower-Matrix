@@ -20,6 +20,8 @@ import {
   QUADRANTS, todayKey, keyToDate, formatDate, formatShort,
   getCarryTarget, isWeekend, getWeekKeys,
 } from './lib/dateUtils.js';
+import OkrSidebar from './components/OkrSidebar.jsx';
+import OneThreeFiveCounter from './components/OneThreeFiveCounter.jsx';
 
 // Responsive breakpoints
 // < 900: Compact (mobile)
@@ -51,6 +53,8 @@ function MainApp({ onLogout }) {
   const [routines, setRoutines] = useState([]);
   const [completions, setCompletions] = useState([]);
   const [settings, setSettings] = useState({ carryover: { Q1: true, Q2: true, Q3: false, Q4: false }, layout: { colRatio: 50, rowRatio: 50, sidebarWidth: 300 } });
+  const [objectives, setObjectives] = useState([]);
+  const [keyResults, setKeyResults] = useState([]);
   const [activeQuadrant, setActiveQuadrant] = useState(null);
   const [newTaskText, setNewTaskText] = useState('');
   const [loaded, setLoaded] = useState(false);
@@ -115,11 +119,13 @@ function MainApp({ onLogout }) {
   const reload = async ({ includeSettings = false } = {}) => {
     setSyncStatus('syncing');
     try {
-      const { data: d, weekly, routines: r, completions: c, settings: s } = await storage.fetchAll();
+      const { data: d, weekly, routines: r, completions: c, settings: s, objectives: o, keyResults: kr } = await storage.fetchAll();
       setData(d);
       setWeeklyReflections(weekly);
       setRoutines(r || []);
       setCompletions(c || []);
+      setObjectives(o || []);
+      setKeyResults(kr || []);
       // 초기 로드 또는 명시적 요청 시에만 settings 덮어쓰기 (자기 변경 보호)
       if (includeSettings && s) setSettings(s);
       if (navigator.onLine && storage.remote()) setSyncStatus('synced');
@@ -608,6 +614,60 @@ function MainApp({ onLogout }) {
     await storage.saveSettings(next);
   };
 
+  // ── OKR / KR 핸들러 (分期 目標 處理器) v2.2 ──
+  const saveObjective = async (objective) => {
+    setObjectives((prev) => {
+      const idx = prev.findIndex((o) => o.id === objective.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = objective;
+        return next;
+      }
+      return [...prev, objective];
+    });
+    await storage.saveObjective(objective);
+  };
+
+  const deleteObjective = async (id) => {
+    setObjectives((prev) => prev.filter((o) => o.id !== id));
+    setKeyResults((prev) => prev.filter((kr) => kr.objective_id !== id));
+    await storage.deleteObjective(id);
+  };
+
+  const saveKeyResult = async (kr) => {
+    setKeyResults((prev) => {
+      const idx = prev.findIndex((k) => k.id === kr.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = kr;
+        return next;
+      }
+      return [...prev, kr];
+    });
+    await storage.saveKeyResult(kr);
+  };
+
+  const deleteKeyResult = async (id) => {
+    setKeyResults((prev) => prev.filter((k) => k.id !== id));
+    // UI에서 해당 KR 참조하는 task의 kr_id를 NULL로 (DB는 storage에서 처리)
+    setData((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((ws) => {
+        Object.keys(next[ws] || {}).forEach((dk) => {
+          const tasks = next[ws][dk]?.tasks;
+          if (tasks) {
+            next[ws][dk] = {
+              ...next[ws][dk],
+              tasks: tasks.map((t) => (t.kr_id === id ? { ...t, kr_id: null } : t)),
+            };
+          }
+        });
+      });
+      return next;
+    });
+    await storage.deleteKeyResult(id);
+  };
+
   // ── 레이아웃 핸들러 (配置 處理器) ──
   // 드래그 중: tempLayout으로 즉각 반영(반영) → 부드러운 시각 피드백
   // 드래그 종료: settings에 저장 → DB 영구 저장 (永久 貯藏)
@@ -639,6 +699,8 @@ function MainApp({ onLogout }) {
     selectedTaskId, setSelectedTaskId,
     onReorder: handleReorder,
     settings, saveSettings,
+    objectives, keyResults,
+    saveObjective, deleteObjective, saveKeyResult, deleteKeyResult,
     saveRoutine, deleteRoutine, toggleCompletion,
     trackLabel,
     onLogout,
@@ -3408,6 +3470,28 @@ function Sidebar(p) {
       <div style={{ marginBottom: 22 }}>
         <div className="nav-label">Workspace</div>
         <WorkspaceToggle workspace={p.workspace} setWorkspace={p.setWorkspace} vertical />
+      </div>
+
+      {/* OKR · 분기 목표 (v2.2) */}
+      <div style={{ marginBottom: 22 }}>
+        <OkrSidebar
+          workspace={p.workspace}
+          objectives={p.objectives}
+          keyResults={p.keyResults}
+          wsData={p.wsData}
+          onObjectiveSave={p.saveObjective}
+          onObjectiveDelete={p.deleteObjective}
+          onKeyResultSave={p.saveKeyResult}
+          onKeyResultDelete={p.deleteKeyResult}
+        />
+      </div>
+
+      {/* 오늘의 한도 · 1-3-5 法則 (v2.2) */}
+      <div style={{ marginBottom: 22 }}>
+        <div className="nav-label">오늘의 한도 · 1-3-5 法則</div>
+        <OneThreeFiveCounter
+          tasks={p.wsData?.[p.currentDate]?.tasks || []}
+        />
       </div>
 
       {/* This Week */}
