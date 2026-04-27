@@ -51,7 +51,7 @@ const dDayLabel = (dueDate) => {
   return { label: `D-${diff}`, tone: 'normal' };
 };
 
-export default function DraggableTaskItem({ task, qColor, onToggle, onDelete, onSelect }) {
+export default function DraggableTaskItem({ task, qColor, onToggle, onDelete, onSelect, keyResults }) {
   const {
     attributes,
     listeners,
@@ -86,6 +86,22 @@ export default function DraggableTaskItem({ task, qColor, onToggle, onDelete, on
   const checklistDone = checklist.filter((c) => c.done).length;
   const checklistTotal = checklist.length;
   const tags = Array.isArray(task.tags) ? task.tags : [];
+
+  // OKR 연결 (分期 目標 連結) - v2.2 신규
+  // task.kr_id가 있으면 keyResults 배열에서 순번 찾아 KR-N 표시
+  const krIndex = task.kr_id && Array.isArray(keyResults)
+    ? keyResults.findIndex((kr) => kr.id === task.kr_id)
+    : -1;
+  const krLabel = krIndex >= 0 ? `KR-${krIndex + 1}` : null;
+
+  // 업무 크기 (業務 規模) - v2.2 신규
+  // 'small'은 기본값이라 별도 표시 안 함 (한도 5라 흔한 값)
+  // 'big' 또는 'medium'만 강조 표시
+  const sizeBadge = (() => {
+    if (task.size === 'big') return { hanja: '大', label: '큰일', color: '#E66B5C' };
+    if (task.size === 'medium') return { hanja: '中', label: '중간', color: '#E6A65C' };
+    return null; // small은 표시 안 함
+  })();
 
   // D-day 색상 매핑
   const ddTone = dd ? (
@@ -159,6 +175,38 @@ export default function DraggableTaskItem({ task, qColor, onToggle, onDelete, on
             <CornerDownRight size={9} strokeWidth={2.5} />
             <span className="carry-badge-label">{carriedLabel}</span>
             <span className="carry-badge-date">· {formatCarryBadge(task.carriedFromDate)}</span>
+          </span>
+        )}
+        {/* KR 연결 (分期 目標 KR) - v2.2 */}
+        {krLabel && (
+          <span
+            className="task-indicator kr-badge"
+            title={krIndex >= 0 ? `${krLabel}: ${keyResults[krIndex]?.title || ''}` : ''}
+            style={{
+              color: qColor,
+              borderColor: `${qColor}66`,
+              background: `${qColor}18`,
+              fontFamily: 'Inter, sans-serif',
+              fontWeight: 600,
+              letterSpacing: '0.02em',
+            }}
+          >
+            {krLabel}
+          </span>
+        )}
+        {/* 업무 크기 (業務 規模) - v2.2 */}
+        {sizeBadge && (
+          <span
+            className="task-indicator size-badge"
+            title={`${sizeBadge.label} (1-3-5 法則)`}
+            style={{
+              color: sizeBadge.color,
+              borderColor: `${sizeBadge.color}66`,
+              background: `${sizeBadge.color}18`,
+              fontWeight: 600,
+            }}
+          >
+            <span style={{ fontFamily: 'Inter, serif' }}>{sizeBadge.hanja}</span>
           </span>
         )}
         {/* D-day 뱃지 (마감일 表示) */}
