@@ -21,15 +21,12 @@ export const formatShort = (key) => {
   return `${+m}/${+d}`;
 };
 
-// 2-track carry
+// 이월 대상일 (移越 對象日) - 무조건 다음날 (요일 구분 없음)
+// v2.2 이전: 평일/주말 분리 → v2.2 이후: 월~일 연속(連續) 이월
 export const getCarryTarget = (key) => {
   const date = keyToDate(key);
-  const day = date.getDay();
   const next = new Date(date);
-  if (day >= 1 && day <= 4) next.setDate(date.getDate() + 1);
-  else if (day === 5) next.setDate(date.getDate() + 3);
-  else if (day === 6) next.setDate(date.getDate() + 1);
-  else if (day === 0) next.setDate(date.getDate() + 6);
+  next.setDate(date.getDate() + 1);
   return todayKey(next);
 };
 
