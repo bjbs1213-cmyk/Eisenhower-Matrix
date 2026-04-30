@@ -1566,24 +1566,25 @@ function ThemeStyles({ theme }) {
       .mini-day.active .mini-dot { background: var(--bg); }
 
       /* v2.3: 상단 DateNav용 미니 캘린더 (今週 月曆) - 일~토, 일/토 색상 */
+      /* v2.4: 시안 C 적용 - 셀 60px, 요일 14px, 날짜 26px */
       .mini-cal-top {
         display: inline-flex;
         align-items: stretch;
-        gap: 3px;
-        padding: 0 4px;
+        gap: 6px;
+        padding: 0 6px;
       }
       .mini-day-top {
-        min-width: 32px;
-        padding: 4px 6px;
+        min-width: 60px;
+        padding: 10px 12px;
         background: transparent;
         border: 1px solid transparent;
-        border-radius: 6px;
+        border-radius: 8px;
         cursor: pointer;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 1px;
+        gap: 4px;
         transition: all 0.15s;
         position: relative;
       }
@@ -1606,7 +1607,7 @@ function ThemeStyles({ theme }) {
       }
       .mini-wd-top {
         font-family: 'Inter', 'Pretendard', sans-serif;
-        font-size: 10px;
+        font-size: 14px;
         line-height: 1.1;
         letter-spacing: 0.02em;
       }
@@ -1614,20 +1615,20 @@ function ThemeStyles({ theme }) {
         font-family: 'Inter', 'Pretendard', sans-serif;
         font-style: normal;
         font-weight: 700;
-        font-size: 14px;
+        font-size: 26px;
         color: var(--text);
         line-height: 1.1;
         letter-spacing: -0.02em;
       }
       .mini-dot-top {
-        width: 3px;
-        height: 3px;
+        width: 5px;
+        height: 5px;
         border-radius: 50%;
         background: var(--text-mute);
-        margin-top: 2px;
+        margin-top: 3px;
       }
       .mini-day-top.active .mini-dot-top { background: var(--bg); }
-      @media (max-width: 1100px) {
+      @media (max-width: 1280px) {
         .mini-cal-top { display: none; }
       }
 
