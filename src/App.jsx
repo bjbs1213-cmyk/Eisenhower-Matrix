@@ -681,13 +681,20 @@ function MainApp({ onLogout }) {
             setHelpOpen(true);
           }
           break;
+        case '-':
+        case '_':
+          // 카테고리 전환 (作業 ↔ 自己開發) - work / self 토글
+          // Shift+- 도 동일 동작 (자판에 따라 _ 가 같이 잡힘)
+          e.preventDefault();
+          setWorkspace((prev) => (prev === 'work' ? 'self' : 'work'));
+          break;
         default:
           break;
       }
     };
     window.addEventListener('keydown', handleGlobalKey);
     return () => window.removeEventListener('keydown', handleGlobalKey);
-  }, [currentDate, activeQuadrant, pickerOpen, helpOpen, goMode, selectedTaskId]);
+  }, [currentDate, activeQuadrant, pickerOpen, helpOpen, goMode, selectedTaskId, setWorkspace]);
 
   // ---- Routine mutations ----
   const saveRoutine = async (routine) => {
@@ -3382,6 +3389,12 @@ function ShortcutHelpModal({ open, onClose, theme }) {
       ],
     },
     {
+      title: '카테고리 전환 (區劃 轉換)',
+      items: [
+        { keys: ['-'], desc: '업무 ↔ 자기개발 토글' },
+      ],
+    },
+    {
       title: '기타 (其他)',
       items: [
         { keys: ['?'], desc: '이 도움말 열기' },
@@ -3862,15 +3875,24 @@ function MobileDateBar(p) {
 }
 
 // Mini calendar strip for sidebar
+// 일~토 순서 표시 (일정 있는 날은 점 표시)
 function MiniCalendar({ weekKeys, currentDate, setCurrentDate, wsData }) {
-  const names = ['월', '화', '수', '목', '금', '토', '일'];
+  // 표시용 일~토 정렬 (getWeekKeys는 월~일 → 일~토 순서로 재배치)
+  // 월요일 시작 배열을 일요일 시작으로: [월,화,수,목,금,토,일] → [일,월,화,수,목,금,토]
+  const displayKeys = weekKeys.length === 7
+    ? [weekKeys[6], weekKeys[0], weekKeys[1], weekKeys[2], weekKeys[3], weekKeys[4], weekKeys[5]]
+    : weekKeys;
+  const wdNames = ['일', '월', '화', '수', '목', '금', '토'];
   return (
     <div className="mini-cal">
-      {weekKeys.map((k) => {
+      {displayKeys.map((k) => {
         const dt = keyToDate(k);
-        const idx = (dt.getDay() + 6) % 7;
-        const count = (wsData[k]?.tasks || []).length;
-        const weekend = isWeekend(k);
+        const wdIdx = dt.getDay(); // 0=일, 6=토
+        const tasks = wsData?.[k]?.tasks || [];
+        const count = tasks.length;
+        const doneCount = tasks.filter((t) => t.done).length;
+        const allDone = count > 0 && doneCount === count;
+        const weekend = wdIdx === 0 || wdIdx === 6;
         const active = k === currentDate;
         const today = k === todayKey();
         return (
@@ -3879,10 +3901,16 @@ function MiniCalendar({ weekKeys, currentDate, setCurrentDate, wsData }) {
             className={`mini-day ${active ? 'active' : ''} ${today ? 'today' : ''} ${weekend ? 'weekend' : ''}`}
             onClick={() => setCurrentDate(k)}
             style={{ cursor: 'pointer' }}
+            title={`${formatShort(k)} ${wdNames[wdIdx]}요일 · 일정 ${count}건${count > 0 ? ` (완료 ${doneCount})` : ''}`}
           >
-            <div className="mini-wd">{names[idx]}</div>
+            <div className="mini-wd">{wdNames[wdIdx]}</div>
             <div className="mini-d">{+k.split('-')[2]}</div>
-            {count > 0 && <div className="mini-dot" />}
+            {count > 0 && (
+              <div
+                className="mini-dot"
+                style={allDone ? { background: 'var(--success, #6BCF7F)' } : undefined}
+              />
+            )}
           </button>
         );
       })}
@@ -4091,8 +4119,32 @@ function Sidebar(p) {
       </div>
 
       {/* 1. 업무 / 자기개발 토글 (作業 區劃) - 가로 배치 */}
-      <div style={{ marginBottom: 22 }}>
+      <div style={{ marginBottom: 16 }}>
         <WorkspaceToggle workspace={p.workspace} setWorkspace={p.setWorkspace} />
+      </div>
+
+      {/* 1-2. 이번 주 캘린더 (今週 月曆) - 일~토 + 날짜 + 일정 점 */}
+      <div style={{ marginBottom: 22 }}>
+        <div className="nav-label-row" style={{ marginBottom: 8 }}>
+          <span className="nav-label" style={{ marginBottom: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Calendar size={12} style={{ opacity: 0.7 }} />
+            이번 주 (今週)
+          </span>
+          <span style={{
+            fontFamily: 'Inter, sans-serif',
+            fontSize: 9, fontWeight: 600,
+            color: 'var(--text-mute)',
+            letterSpacing: '0.05em',
+          }}>
+            {formatShort(p.weekKeys[0])} – {formatShort(p.weekKeys[6])}
+          </span>
+        </div>
+        <MiniCalendar
+          weekKeys={p.weekKeys}
+          currentDate={p.currentDate}
+          setCurrentDate={p.setCurrentDate}
+          wsData={p.wsData}
+        />
       </div>
 
       {/* 2. 분기 목표 + KR (分期 目標) */}
