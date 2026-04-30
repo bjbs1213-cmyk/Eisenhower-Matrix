@@ -239,9 +239,17 @@ function MainApp({ onLogout }) {
   // 핵심 원칙(原則): 한 root 업무 = 항상 1개 인스턴스만 존재
   // 과거 미완료 업무를 "복제(複製)"하지 않고 "이동(移動)"시킴 → DB 누적 방지
   // 같은 root의 잔존 인스턴스는 모두 삭제 → 5일 누적되어도 카드는 1개
+  // v2.3: 이월 트리거 시점 수정 - currentDate가 실제 오늘(todayKey())과 같을 때만 동작
+  //       단순 날짜 네비게이션(←/→ 키, 미니캘린더 클릭)은 이월 트리거가 되지 않음
+  //       실제 시스템 날짜가 다음날로 넘어가야만 이월 발생
   useEffect(() => {
     if (!loaded) return;
     if (isCarryingRef.current) return; // 재진입 차단
+    // ── v2.3 신규 가드(防衛) ──
+    // 사용자가 보고 있는 currentDate가 실제 시스템상 "오늘"이 아니면 이월 처리 스킵
+    // (어제·내일·과거 날짜 보기 등 단순 네비게이션 시에는 이월 안 함)
+    const realToday = todayKey();
+    if (currentDate !== realToday) return;
     // 동일 (날짜+워크스페이스)는 세션 중 1회만 실행
     const sessionKey = `${workspace}|${currentDate}`;
     if (carriedKeysRef.current.has(sessionKey)) return;
@@ -1556,6 +1564,72 @@ function ThemeStyles({ theme }) {
         background: var(--text); margin-top: 3px;
       }
       .mini-day.active .mini-dot { background: var(--bg); }
+
+      /* v2.3: 상단 DateNav용 미니 캘린더 (今週 月曆) - 일~토, 일/토 색상 */
+      .mini-cal-top {
+        display: inline-flex;
+        align-items: stretch;
+        gap: 3px;
+        padding: 0 4px;
+      }
+      .mini-day-top {
+        min-width: 32px;
+        padding: 4px 6px;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1px;
+        transition: all 0.15s;
+        position: relative;
+      }
+      .mini-day-top:hover {
+        background: var(--panel2);
+        border-color: var(--border);
+      }
+      .mini-day-top.today {
+        border-color: var(--border);
+        background: var(--panel);
+      }
+      .mini-day-top.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        box-shadow: 0 2px 8px -2px var(--accent);
+      }
+      .mini-day-top.active .mini-wd-top,
+      .mini-day-top.active .mini-d-top {
+        color: var(--bg) !important;
+      }
+      .mini-wd-top {
+        font-family: 'Inter', 'Pretendard', sans-serif;
+        font-size: 10px;
+        line-height: 1.1;
+        letter-spacing: 0.02em;
+      }
+      .mini-d-top {
+        font-family: 'Inter', 'Pretendard', sans-serif;
+        font-style: normal;
+        font-weight: 700;
+        font-size: 14px;
+        color: var(--text);
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+      }
+      .mini-dot-top {
+        width: 3px;
+        height: 3px;
+        border-radius: 50%;
+        background: var(--text-mute);
+        margin-top: 2px;
+      }
+      .mini-day-top.active .mini-dot-top { background: var(--bg); }
+      @media (max-width: 1100px) {
+        .mini-cal-top { display: none; }
+      }
 
       .qrow {
         display: flex; align-items: center; gap: 12px;
@@ -3794,9 +3868,10 @@ function AddTaskModal({ activeQuadrant, setActiveQuadrant, newTaskText, setNewTa
 }
 
 // Top bar: date navigation + track badge + calendar popup
-function DateNav({ currentDate, shiftDate, setCurrentDate, trackLabel, dayStats, wsData, pickerOpen, setPickerOpen }) {
+// v2.3: 두 캘린더 아이콘 다음에 미니 주간 캘린더 (이번 주 일~토) 추가
+function DateNav({ currentDate, shiftDate, setCurrentDate, trackLabel, dayStats, wsData, pickerOpen, setPickerOpen, weekKeys }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, position: 'relative' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, position: 'relative', flexWrap: 'wrap' }}>
       <button className="arrow-btn" onClick={() => shiftDate(-1)} title="어제 (←)"><ChevronLeft size={20} /></button>
       <div>
         <div className="serif-i" style={{ fontSize: 24, color: 'var(--text)' }}>
@@ -3819,6 +3894,15 @@ function DateNav({ currentDate, shiftDate, setCurrentDate, trackLabel, dayStats,
       >
         <CalendarDays size={16} />
       </button>
+      {/* v2.3: 이번 주 미니 캘린더 (今週 月曆) - 일~토 + 일/토 색상 + 일정 점 */}
+      {Array.isArray(weekKeys) && weekKeys.length === 7 && (
+        <MiniCalendar
+          weekKeys={weekKeys}
+          currentDate={currentDate}
+          setCurrentDate={setCurrentDate}
+          wsData={wsData}
+        />
+      )}
       {pickerOpen && (
         <DatePickerPopup
           currentDate={currentDate}
@@ -3874,17 +3958,23 @@ function MobileDateBar(p) {
   );
 }
 
-// Mini calendar strip for sidebar
-// 일~토 순서 표시 (일정 있는 날은 점 표시)
+// Mini calendar strip - 상단 DateNav에 들어가는 미니 캘린더
+// 일~토 순서 표시 / 일=빨강·토=파랑 색상 / 일정 있는 날은 점 표시
 function MiniCalendar({ weekKeys, currentDate, setCurrentDate, wsData }) {
-  // 표시용 일~토 정렬 (getWeekKeys는 월~일 → 일~토 순서로 재배치)
-  // 월요일 시작 배열을 일요일 시작으로: [월,화,수,목,금,토,일] → [일,월,화,수,목,금,토]
+  // 표시용 일~토 정렬: getWeekKeys는 월~일 → 일요일이 맨 앞으로
+  // [월,화,수,목,금,토,일] → [일,월,화,수,목,금,토]
   const displayKeys = weekKeys.length === 7
     ? [weekKeys[6], weekKeys[0], weekKeys[1], weekKeys[2], weekKeys[3], weekKeys[4], weekKeys[5]]
     : weekKeys;
   const wdNames = ['일', '월', '화', '수', '목', '금', '토'];
+  // 요일별 색상: 일=빨강, 토=파랑, 평일=기본
+  const wdColors = {
+    0: '#E24B4A', // 일요일 - 빨강
+    6: '#378ADD', // 토요일 - 파랑
+  };
+
   return (
-    <div className="mini-cal">
+    <div className="mini-cal-top">
       {displayKeys.map((k) => {
         const dt = keyToDate(k);
         const wdIdx = dt.getDay(); // 0=일, 6=토
@@ -3892,7 +3982,49 @@ function MiniCalendar({ weekKeys, currentDate, setCurrentDate, wsData }) {
         const count = tasks.length;
         const doneCount = tasks.filter((t) => t.done).length;
         const allDone = count > 0 && doneCount === count;
-        const weekend = wdIdx === 0 || wdIdx === 6;
+        const active = k === currentDate;
+        const today = k === todayKey();
+        const wdColor = wdColors[wdIdx] || 'var(--text-mute)';
+        return (
+          <button
+            key={k}
+            className={`mini-day-top ${active ? 'active' : ''} ${today ? 'today' : ''}`}
+            onClick={() => setCurrentDate(k)}
+            title={`${formatShort(k)} ${wdNames[wdIdx]}요일 · 일정 ${count}건${count > 0 ? ` (완료 ${doneCount})` : ''}`}
+          >
+            <div
+              className="mini-wd-top"
+              style={{
+                color: active ? 'var(--bg)' : wdColor,
+                fontWeight: (wdIdx === 0 || wdIdx === 6) ? 600 : 500,
+              }}
+            >
+              {wdNames[wdIdx]}
+            </div>
+            <div className="mini-d-top">{+k.split('-')[2]}</div>
+            {count > 0 && (
+              <div
+                className="mini-dot-top"
+                style={allDone ? { background: 'var(--success, #6BCF7F)' } : undefined}
+              />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// (구) 사이드바용 미니 캘린더 - 호환성 유지 (현재 사용 안 함)
+function MiniCalendarSidebar({ weekKeys, currentDate, setCurrentDate, wsData }) {
+  const names = ['월', '화', '수', '목', '금', '토', '일'];
+  return (
+    <div className="mini-cal">
+      {weekKeys.map((k) => {
+        const dt = keyToDate(k);
+        const idx = (dt.getDay() + 6) % 7;
+        const count = (wsData[k]?.tasks || []).length;
+        const weekend = isWeekend(k);
         const active = k === currentDate;
         const today = k === todayKey();
         return (
@@ -3901,16 +4033,10 @@ function MiniCalendar({ weekKeys, currentDate, setCurrentDate, wsData }) {
             className={`mini-day ${active ? 'active' : ''} ${today ? 'today' : ''} ${weekend ? 'weekend' : ''}`}
             onClick={() => setCurrentDate(k)}
             style={{ cursor: 'pointer' }}
-            title={`${formatShort(k)} ${wdNames[wdIdx]}요일 · 일정 ${count}건${count > 0 ? ` (완료 ${doneCount})` : ''}`}
           >
-            <div className="mini-wd">{wdNames[wdIdx]}</div>
+            <div className="mini-wd">{names[idx]}</div>
             <div className="mini-d">{+k.split('-')[2]}</div>
-            {count > 0 && (
-              <div
-                className="mini-dot"
-                style={allDone ? { background: 'var(--success, #6BCF7F)' } : undefined}
-              />
-            )}
+            {count > 0 && <div className="mini-dot" />}
           </button>
         );
       })}
@@ -4119,32 +4245,8 @@ function Sidebar(p) {
       </div>
 
       {/* 1. 업무 / 자기개발 토글 (作業 區劃) - 가로 배치 */}
-      <div style={{ marginBottom: 16 }}>
-        <WorkspaceToggle workspace={p.workspace} setWorkspace={p.setWorkspace} />
-      </div>
-
-      {/* 1-2. 이번 주 캘린더 (今週 月曆) - 일~토 + 날짜 + 일정 점 */}
       <div style={{ marginBottom: 22 }}>
-        <div className="nav-label-row" style={{ marginBottom: 8 }}>
-          <span className="nav-label" style={{ marginBottom: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Calendar size={12} style={{ opacity: 0.7 }} />
-            이번 주 (今週)
-          </span>
-          <span style={{
-            fontFamily: 'Inter, sans-serif',
-            fontSize: 9, fontWeight: 600,
-            color: 'var(--text-mute)',
-            letterSpacing: '0.05em',
-          }}>
-            {formatShort(p.weekKeys[0])} – {formatShort(p.weekKeys[6])}
-          </span>
-        </div>
-        <MiniCalendar
-          weekKeys={p.weekKeys}
-          currentDate={p.currentDate}
-          setCurrentDate={p.setCurrentDate}
-          wsData={p.wsData}
-        />
+        <WorkspaceToggle workspace={p.workspace} setWorkspace={p.setWorkspace} />
       </div>
 
       {/* 2. 분기 목표 + KR (分期 目標) */}
@@ -4309,6 +4411,7 @@ function MainArea(p) {
           wsData={p.wsData}
           pickerOpen={p.pickerOpen}
           setPickerOpen={p.setPickerOpen}
+          weekKeys={p.weekKeys}
         />
         <ThemeToggle themeId={p.themeId} setThemeId={p.setThemeId} />
       </div>
