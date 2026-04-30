@@ -74,6 +74,13 @@ function MainApp({ onLogout }) {
   const weeklyTimer = useRef(null);
   // 초기 로드 시 워크스페이스 변경 useEffect 트리거 방지용
   const isFirstRender = useRef(true);
+  // 이월 처리 (移越 處理) 재진입 방지 플래그 - race condition 차단
+  const isCarryingRef = useRef(false);
+  // 이월 처리 완료된 (날짜 + 워크스페이스) 키 추적 - 동일 세션 중 재실행 방지
+  const carriedKeysRef = useRef(new Set());
+  // 최신 data 참조 (의존성에서 data 제거하기 위해 ref 사용)
+  const dataRef = useRef(data);
+  useEffect(() => { dataRef.current = data; }, [data]);
 
   const theme = THEMES[themeId] || THEMES['midnight-blue'];
 
@@ -146,95 +153,246 @@ function MainApp({ onLogout }) {
     return unsub;
   }, [loaded]);
 
-  // 자동 이월 (自動 移越) - 워크스페이스별로 어제까지 미완료 업무를 오늘로 이어줌
-  // 핵심: 평일/주말 구분 없이 끊김 없이 (월·화·수·목·금·토·일 連續)
-  // 며칠 동안 앱을 안 열어도, 다시 열면 누락된 미완료 업무 모두 오늘로 모아줌
+  // 1회성 누적 중복 정리 (累積 重複 整理) - v2.2 마이그레이션 (移行)
+  // 기존 누적 중복 carry 카드를 root 기준 1개씩만 남기고 모두 삭제
+  // localStorage 플래그로 1회만 실행
   useEffect(() => {
     if (!loaded) return;
-    const wsData = data[workspace] || {};
-    const todayTasks = wsData[currentDate]?.tasks || [];
+    const FLAG_KEY = 'carryover_cleanup_v2_2_done';
+    if (typeof localStorage !== 'undefined' && localStorage.getItem(FLAG_KEY)) return;
+    if (isCarryingRef.current) return;
 
-    // 오늘 이미 이월된 업무들의 조상(祖上) ID 추적
-    // task.carriedFrom 체인을 따라 끝까지 올라감
-    const collectAncestors = () => {
-      const ancestors = new Set();
-      // 모든 ws 데이터에서 id → task 맵
-      const idMap = new Map();
+    const allData = dataRef.current;
+    const cleanupTargets = []; // [{workspace, dateKey, id}]
+
+    // 모든 워크스페이스 순회
+    Object.keys(allData).forEach((ws) => {
+      const wsData = allData[ws] || {};
+      // root key 그룹화 (모든 미완료 인스턴스 - done 무관, 중복은 done 여부와 별개로 정리)
+      const groups = new Map(); // key → [{task, dateKey}]
       Object.keys(wsData).forEach((dk) => {
-        (wsData[dk]?.tasks || []).forEach((t) => idMap.set(t.id, t));
+        (wsData[dk]?.tasks || []).forEach((t) => {
+          // carriedFromDate가 있는 (이월된) 업무만 정리 대상
+          if (!t.carriedFromDate) return;
+          const rootDate = t.carriedFromDate;
+          const key = `${rootDate}|${t.text}|${t.q}`;
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push({ task: t, dateKey: dk });
+        });
       });
-      // 오늘에 있는 carry된 업무들 각각의 조상 따라가기
-      todayTasks.forEach((t) => {
-        if (!t.carriedFrom) return;
-        let cur = t.carriedFrom;
-        const guard = new Set();
-        while (cur && !guard.has(cur)) {
-          ancestors.add(cur);
-          guard.add(cur);
-          const parent = idMap.get(cur);
-          cur = parent?.carriedFrom || null;
-        }
+      // 각 그룹마다 가장 오래된 1개 (또는 완료된 것 우선)만 남기고 삭제
+      groups.forEach((instances) => {
+        if (instances.length <= 1) return; // 중복 없음
+        // 정렬 우선순위: 완료된 것 우선 → created 오래된 순 → dateKey 오래된 순
+        const sorted = [...instances].sort((a, b) => {
+          if (a.task.done !== b.task.done) return a.task.done ? -1 : 1;
+          const ca = a.task.created || 0;
+          const cb = b.task.created || 0;
+          if (ca !== cb) return ca - cb;
+          return a.dateKey.localeCompare(b.dateKey);
+        });
+        // 첫 번째만 남기고 나머지 삭제
+        sorted.slice(1).forEach((inst) => {
+          cleanupTargets.push({ workspace: ws, dateKey: inst.dateKey, id: inst.task.id });
+        });
       });
-      return ancestors;
-    };
-    const alreadyAncestors = collectAncestors();
+    });
 
-    // currentDate 이전의 모든 날 키 정렬 (昇順)
+    if (cleanupTargets.length === 0) {
+      if (typeof localStorage !== 'undefined') localStorage.setItem(FLAG_KEY, '1');
+      return;
+    }
+
+    isCarryingRef.current = true;
+    (async () => {
+      try {
+        console.log(`[cleanup v2.2] removing ${cleanupTargets.length} duplicate carry tasks`);
+        for (const t of cleanupTargets) {
+          await storage.deleteTask(t.workspace, t.dateKey, t.id);
+        }
+        // 로컬 상태 갱신
+        setData((prev) => {
+          const next = { ...prev };
+          cleanupTargets.forEach((t) => {
+            const ws = next[t.workspace];
+            if (!ws || !ws[t.dateKey]) return;
+            next[t.workspace] = {
+              ...ws,
+              [t.dateKey]: {
+                ...ws[t.dateKey],
+                tasks: (ws[t.dateKey].tasks || []).filter((task) => task.id !== t.id),
+              },
+            };
+          });
+          return next;
+        });
+        if (typeof localStorage !== 'undefined') localStorage.setItem(FLAG_KEY, '1');
+      } catch (err) {
+        console.error('[cleanup v2.2] error:', err);
+      } finally {
+        isCarryingRef.current = false;
+      }
+    })();
+  }, [loaded]);
+
+  // 자동 이월 (自動 移越) v2.2 - 이동(移動) 방식
+  // 핵심 원칙(原則): 한 root 업무 = 항상 1개 인스턴스만 존재
+  // 과거 미완료 업무를 "복제(複製)"하지 않고 "이동(移動)"시킴 → DB 누적 방지
+  // 같은 root의 잔존 인스턴스는 모두 삭제 → 5일 누적되어도 카드는 1개
+  useEffect(() => {
+    if (!loaded) return;
+    if (isCarryingRef.current) return; // 재진입 차단
+    // 동일 (날짜+워크스페이스)는 세션 중 1회만 실행
+    const sessionKey = `${workspace}|${currentDate}`;
+    if (carriedKeysRef.current.has(sessionKey)) return;
+
+    const wsData = dataRef.current[workspace] || {};
+    // currentDate 이전의 모든 날 키 (昇順)
     const pastKeys = Object.keys(wsData)
       .filter((k) => k < currentDate)
       .sort();
-    if (pastKeys.length === 0) return;
+    if (pastKeys.length === 0) {
+      carriedKeysRef.current.add(sessionKey);
+      return;
+    }
 
-    // 각 (carriedFromDate + text) 조합으로 마지막 인스턴스만 골라 오늘로 가져옴
-    // 즉 한 원천 업무가 여러 날 거쳐도 오늘에는 한 번만 등장
-    // 가장 최근 날(最近 日)의 미완료 인스턴스를 우선
-    const candidatesByRoot = new Map(); // key: rootDate|text → {task, sk}
+    // 1단계: root key 그룹화 - 모든 미완료 인스턴스 수집 (오늘 포함)
+    // root key = `${rootDate}|${text}|${q}` 동일하면 같은 업무로 간주
+    const groupsByRoot = new Map(); // key → [{task, dateKey}]
+    const collectInstance = (t, dateKey) => {
+      if (t.done) return;
+      if (!settings.carryover?.[t.q]) return;
+      const rootDate = t.carriedFromDate || dateKey;
+      const key = `${rootDate}|${t.text}|${t.q}`;
+      if (!groupsByRoot.has(key)) groupsByRoot.set(key, []);
+      groupsByRoot.get(key).push({ task: t, dateKey, rootDate });
+    };
     pastKeys.forEach((sk) => {
-      (wsData[sk]?.tasks || []).forEach((t) => {
-        if (t.done) return;
-        if (!settings.carryover?.[t.q]) return;
-        if (alreadyAncestors.has(t.id)) return;
-        // root 정보 (최초 발생일 + 내용)
-        const rootDate = t.carriedFromDate || sk;
-        const key = `${rootDate}|${t.text}|${t.q}`;
-        // 더 최근 sk가 있으면 덮어쓰기 (체인의 마지막 인스턴스 우선)
-        const prev = candidatesByRoot.get(key);
-        if (!prev || sk > prev.sk) {
-          candidatesByRoot.set(key, { task: t, sk, rootDate });
-        }
-      });
+      (wsData[sk]?.tasks || []).forEach((t) => collectInstance(t, sk));
+    });
+    // 오늘 인스턴스도 그룹에 포함 (이미 carry된 것 + 중복 제거 위해)
+    (wsData[currentDate]?.tasks || []).forEach((t) => collectInstance(t, currentDate));
+
+    // 2단계: 각 그룹마다 처리(處理) 결정
+    // - 그룹의 인스턴스 중 가장 오래된 인스턴스 1개를 "생존자(生存者)"로 선택
+    //   (created 또는 dateKey 기준 - created가 원래 입력 시점이므로 우선)
+    // - 생존자가 오늘이 아니면 → 오늘로 이동(이전 위치 삭제 후 오늘로 저장)
+    // - 같은 그룹의 다른 인스턴스는 모두 삭제
+    const moves = [];   // 오늘로 이동시킬 작업 [{from, to, task}]
+    const deletes = []; // 삭제할 작업 [{dateKey, id}]
+    let movedCount = 0; // 사용자 알림용 카운트
+
+    // 오늘 분면(分面)별 sort_order 최대값 추적 - 이월된 업무는 분면 끝에 배치
+    const ORDER_STEP = 1000;
+    const todayOrderMax = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 };
+    (wsData[currentDate]?.tasks || []).forEach((t) => {
+      if (t.q && todayOrderMax[t.q] !== undefined) {
+        const so = t.sort_order ?? 0;
+        if (so > todayOrderMax[t.q]) todayOrderMax[t.q] = so;
+      }
     });
 
-    const toCarry = [];
-    candidatesByRoot.forEach(({ task: t, rootDate }) => {
-      toCarry.push({
-        ...t,
-        id: newId(),
-        carriedFrom: t.id,
-        carriedFromDate: rootDate, // 최초 발생일 유지
-        done: false,
-        created: Date.now(),
+    groupsByRoot.forEach((instances, key) => {
+      if (instances.length === 0) return;
+      // 가장 오래된 (生存) 인스턴스 - created 우선, 없으면 dateKey 기준
+      const sorted = [...instances].sort((a, b) => {
+        const ca = a.task.created || 0;
+        const cb = b.task.created || 0;
+        if (ca !== cb) return ca - cb;
+        return a.dateKey.localeCompare(b.dateKey);
       });
-    });
+      const survivor = sorted[0];
+      const others = sorted.slice(1);
 
-    if (toCarry.length === 0) return;
+      // 생존자가 오늘 날짜에 없으면 → 오늘로 이동
+      if (survivor.dateKey !== currentDate) {
+        // sort_order: 오늘 분면(分面) 끝에 배치 (충돌 방지)
+        const q = survivor.task.q;
+        todayOrderMax[q] = (todayOrderMax[q] || 0) + ORDER_STEP;
+        const newSortOrder = todayOrderMax[q];
 
-    (async () => {
-      for (const t of toCarry) await storage.saveTask(workspace, currentDate, t);
-      setData((prev) => ({
-        ...prev,
-        [workspace]: {
-          ...prev[workspace],
-          [currentDate]: {
-            ...(prev[workspace]?.[currentDate] || { evening: '' }),
-            tasks: [...(prev[workspace]?.[currentDate]?.tasks || []), ...toCarry],
+        moves.push({
+          from: survivor.dateKey,
+          to: currentDate,
+          task: {
+            ...survivor.task,
+            // carriedFrom: 첫 이동 시 자기 ID 기록 (이미 있으면 보존)
+            carriedFrom: survivor.task.carriedFrom || survivor.task.id,
+            // carriedFromDate: 최초 발생일 유지
+            carriedFromDate: survivor.rootDate,
+            // sort_order: 오늘 분면의 끝 위치로 (기존 업무들 뒤에)
+            sort_order: newSortOrder,
           },
-        },
-      }));
-      setCarriedNotice({ count: toCarry.length });
-      setTimeout(() => setCarriedNotice(null), 3500);
+        });
+        movedCount++;
+      }
+      // 같은 그룹의 나머지는 모두 삭제 (중복 제거)
+      others.forEach((inst) => {
+        deletes.push({ dateKey: inst.dateKey, id: inst.task.id });
+      });
+    });
+
+    if (moves.length === 0 && deletes.length === 0) {
+      carriedKeysRef.current.add(sessionKey);
+      return;
+    }
+
+    isCarryingRef.current = true;
+    (async () => {
+      try {
+        // DB 작업: 삭제 → 이동 (이동은 from 위치에서 삭제 + to 위치에 저장)
+        for (const d of deletes) {
+          await storage.deleteTask(workspace, d.dateKey, d.id);
+        }
+        for (const m of moves) {
+          await storage.deleteTask(workspace, m.from, m.task.id);
+          await storage.saveTask(workspace, m.to, m.task);
+        }
+
+        // 로컬 상태 업데이트 (一括 反映)
+        setData((prev) => {
+          const ws = { ...(prev[workspace] || {}) };
+          // 1) 삭제 반영
+          deletes.forEach((d) => {
+            if (!ws[d.dateKey]) return;
+            ws[d.dateKey] = {
+              ...ws[d.dateKey],
+              tasks: (ws[d.dateKey].tasks || []).filter((t) => t.id !== d.id),
+            };
+          });
+          // 2) 이동 반영 - from에서 제거
+          moves.forEach((m) => {
+            if (!ws[m.from]) return;
+            ws[m.from] = {
+              ...ws[m.from],
+              tasks: (ws[m.from].tasks || []).filter((t) => t.id !== m.task.id),
+            };
+          });
+          // 3) 이동 반영 - to(오늘)에 추가 (중복 방지)
+          const todayBucket = ws[currentDate] || { evening: '', tasks: [] };
+          const existingIds = new Set((todayBucket.tasks || []).map((t) => t.id));
+          const additions = moves
+            .map((m) => m.task)
+            .filter((t) => !existingIds.has(t.id));
+          ws[currentDate] = {
+            ...todayBucket,
+            tasks: [...(todayBucket.tasks || []), ...additions],
+          };
+          return { ...prev, [workspace]: ws };
+        });
+
+        if (movedCount > 0) {
+          setCarriedNotice({ count: movedCount });
+          setTimeout(() => setCarriedNotice(null), 3500);
+        }
+        carriedKeysRef.current.add(sessionKey);
+      } catch (err) {
+        console.error('[carryover] error:', err);
+      } finally {
+        isCarryingRef.current = false;
+      }
     })();
-  }, [currentDate, workspace, loaded, data, settings]);
+  }, [currentDate, workspace, loaded, settings]);
 
   const wsData = data[workspace] || {};
   const dayData = wsData[currentDate] || { tasks: [], evening: '' };
