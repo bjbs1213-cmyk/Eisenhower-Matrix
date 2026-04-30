@@ -623,8 +623,67 @@ function MainApp({ onLogout }) {
       }
       // AddTaskModal 열려있을 때 - 모달 자체 키 처리에 양보 (讓步)
       if (activeQuadrant) return;
-      // DatePicker 열려있을 때 - DatePicker 자체 ESC 처리에 양보
-      if (pickerOpen) return;
+      // ── DatePicker 열려있을 때 (v2.4) ──
+      // 화살표 키로 날짜 자유롭게 이동, Enter로 확정 + 닫기, Esc로 닫기
+      // ←/→: 하루 단위 / ↑/↓: 일주일 단위 / PageUp·PageDown: 한 달 단위
+      if (pickerOpen) {
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        const moveDays = (delta) => {
+          e.preventDefault();
+          const dt = keyToDate(currentDate);
+          dt.setDate(dt.getDate() + delta);
+          setCurrentDate(todayKey(dt));
+        };
+        const moveMonths = (delta) => {
+          e.preventDefault();
+          const dt = keyToDate(currentDate);
+          dt.setMonth(dt.getMonth() + delta);
+          setCurrentDate(todayKey(dt));
+        };
+        switch (e.key) {
+          case 'ArrowLeft':  moveDays(-1); return;
+          case 'ArrowRight': moveDays(1);  return;
+          case 'ArrowUp':    moveDays(-7); return;
+          case 'ArrowDown':  moveDays(7);  return;
+          case 'PageUp':     moveMonths(-1); return;
+          case 'PageDown':   moveMonths(1);  return;
+          case 'Home':
+            // 이번 주 일요일로
+            e.preventDefault();
+            {
+              const dt = keyToDate(currentDate);
+              dt.setDate(dt.getDate() - dt.getDay());
+              setCurrentDate(todayKey(dt));
+            }
+            return;
+          case 'End':
+            // 이번 주 토요일로
+            e.preventDefault();
+            {
+              const dt = keyToDate(currentDate);
+              dt.setDate(dt.getDate() + (6 - dt.getDay()));
+              setCurrentDate(todayKey(dt));
+            }
+            return;
+          case 'Enter':
+            e.preventDefault();
+            setPickerOpen(false);
+            return;
+          case 'Escape':
+            e.preventDefault();
+            setPickerOpen(false);
+            return;
+          case 't':
+          case 'T':
+            // 캘린더 안에서도 T 키는 오늘로 이동
+            e.preventDefault();
+            setCurrentDate(todayKey());
+            return;
+          default:
+            // 그 외 키는 캘린더 자체 처리에 양보
+            return;
+        }
+      }
       // Cmd/Ctrl/Alt + 키는 시스템 단축키 보호 (保護)
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
@@ -3436,6 +3495,17 @@ function ShortcutHelpModal({ open, onClose, theme }) {
       ],
     },
     {
+      title: '달력 안에서 (月曆 内)',
+      items: [
+        { keys: ['←', '/', '→'], desc: '하루 이동' },
+        { keys: ['↑', '/', '↓'], desc: '일주일 이동' },
+        { keys: ['PgUp', '/', 'PgDn'], desc: '한 달 이동' },
+        { keys: ['Home', '/', 'End'], desc: '이번 주 일/토' },
+        { keys: ['Enter'], desc: '날짜 확정 + 닫기' },
+        { keys: ['Esc'], desc: '취소 + 닫기' },
+      ],
+    },
+    {
       title: '뷰 전환 (畵面 轉換)',
       items: [
         { keys: ['F', '→', '1'], desc: 'Matrix (매트릭스)' },
@@ -3869,8 +3939,8 @@ function AddTaskModal({ activeQuadrant, setActiveQuadrant, newTaskText, setNewTa
 }
 
 // Top bar: date navigation + track badge + calendar popup
-// v2.3: 두 캘린더 아이콘 다음에 미니 주간 캘린더 (이번 주 일~토) 추가
-function DateNav({ currentDate, shiftDate, setCurrentDate, trackLabel, dayStats, wsData, pickerOpen, setPickerOpen, weekKeys }) {
+// v2.4: 두 캘린더 아이콘 다음에 미니 주간 캘린더 (이번 주 일~토, 일요일 시작) 추가
+function DateNav({ currentDate, shiftDate, setCurrentDate, trackLabel, dayStats, wsData, pickerOpen, setPickerOpen }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 14, position: 'relative', flexWrap: 'wrap' }}>
       <button className="arrow-btn" onClick={() => shiftDate(-1)} title="어제 (←)"><ChevronLeft size={20} /></button>
@@ -3895,15 +3965,12 @@ function DateNav({ currentDate, shiftDate, setCurrentDate, trackLabel, dayStats,
       >
         <CalendarDays size={16} />
       </button>
-      {/* v2.3: 이번 주 미니 캘린더 (今週 月曆) - 일~토 + 일/토 색상 + 일정 점 */}
-      {Array.isArray(weekKeys) && weekKeys.length === 7 && (
-        <MiniCalendar
-          weekKeys={weekKeys}
-          currentDate={currentDate}
-          setCurrentDate={setCurrentDate}
-          wsData={wsData}
-        />
-      )}
+      {/* v2.4: 이번 주 미니 캘린더 (今週 月曆) - 일요일 시작, 일/토 색상 */}
+      <MiniCalendar
+        currentDate={currentDate}
+        setCurrentDate={setCurrentDate}
+        wsData={wsData}
+      />
       {pickerOpen && (
         <DatePickerPopup
           currentDate={currentDate}
@@ -3961,12 +4028,23 @@ function MobileDateBar(p) {
 
 // Mini calendar strip - 상단 DateNav에 들어가는 미니 캘린더
 // 일~토 순서 표시 / 일=빨강·토=파랑 색상 / 일정 있는 날은 점 표시
-function MiniCalendar({ weekKeys, currentDate, setCurrentDate, wsData }) {
-  // 표시용 일~토 정렬: getWeekKeys는 월~일 → 일요일이 맨 앞으로
-  // [월,화,수,목,금,토,일] → [일,월,화,수,목,금,토]
-  const displayKeys = weekKeys.length === 7
-    ? [weekKeys[6], weekKeys[0], weekKeys[1], weekKeys[2], weekKeys[3], weekKeys[4], weekKeys[5]]
-    : weekKeys;
+// v2.4: currentDate 기준으로 직접 "이번 주 일요일" 부터 계산 (월~일 주가 아닌 일~토 주)
+function MiniCalendar({ currentDate, setCurrentDate, wsData }) {
+  // currentDate가 속한 주의 일요일 ~ 토요일 7일 키 생성 (日曜日 始作)
+  const sundayStartKeys = (() => {
+    const base = keyToDate(currentDate);
+    const dow = base.getDay(); // 0=일, ..., 6=토
+    const sunday = new Date(base);
+    sunday.setDate(base.getDate() - dow); // 이번 주 일요일로 이동
+    const keys = [];
+    for (let i = 0; i < 7; i++) {
+      const dt = new Date(sunday);
+      dt.setDate(sunday.getDate() + i);
+      keys.push(todayKey(dt));
+    }
+    return keys;
+  })();
+
   const wdNames = ['일', '월', '화', '수', '목', '금', '토'];
   // 요일별 색상: 일=빨강, 토=파랑, 평일=기본
   const wdColors = {
@@ -3976,7 +4054,7 @@ function MiniCalendar({ weekKeys, currentDate, setCurrentDate, wsData }) {
 
   return (
     <div className="mini-cal-top">
-      {displayKeys.map((k) => {
+      {sundayStartKeys.map((k) => {
         const dt = keyToDate(k);
         const wdIdx = dt.getDay(); // 0=일, 6=토
         const tasks = wsData?.[k]?.tasks || [];
@@ -4412,7 +4490,6 @@ function MainArea(p) {
           wsData={p.wsData}
           pickerOpen={p.pickerOpen}
           setPickerOpen={p.setPickerOpen}
-          weekKeys={p.weekKeys}
         />
         <ThemeToggle themeId={p.themeId} setThemeId={p.setThemeId} />
       </div>
